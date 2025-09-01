@@ -2,7 +2,6 @@ import numpy as np
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 class Prednet(nn.Module):
     def __init__(
@@ -115,18 +114,19 @@ class Prednet(nn.Module):
         R_list, c_list, E_list = [], [], []
         layer_names =  {s: self.nb_layers for s in ['R', 'c', 'E']}
         
-        for c in layer_names:
-            for l in range(layer_names[c]):
-                downsample_fact = 2 ** l
-                h = input_height // downsample_fact
-                w = input_width // downsample_fact
-                
-                if c == 'R':
-                    R_list.append(torch.zeros((batch, self.R_stack_sizes[l], h, w), requires_grad=False, device=self.device))
-                if c == 'c':
-                    c_list.append(torch.zeros((batch, self.R_stack_sizes[l], h, w), requires_grad=False, device=self.device))
-                elif c == 'E':
-                    E_list.append(torch.zeros((batch, self.A_stack_sizes[l]*2, h, w), requires_grad=False, device=self.device))
+        with torch.no_grad():
+            for c in layer_names:
+                for l in range(layer_names[c]):
+                    downsample_fact = 2 ** l
+                    h = input_height // downsample_fact
+                    w = input_width // downsample_fact
+                    
+                    if c == 'R':
+                        R_list.append(torch.zeros((batch, self.R_stack_sizes[l], h, w), device=self.device, dtype=torch.float32))
+                    if c == 'c':
+                        c_list.append(torch.zeros((batch, self.R_stack_sizes[l], h, w), device=self.device, dtype=torch.float32))
+                    elif c == 'E':
+                        E_list.append(torch.zeros((batch, self.A_stack_sizes[l]*2, h, w), device=self.device, dtype=torch.float32))
         
         states = {
           'R': R_list,
@@ -135,8 +135,9 @@ class Prednet(nn.Module):
         }    
     
         if self.extrap_time:
-            states['frame_prediction'] = torch.zeros(input_shape, requires_grad=False)
-            states['timestep'] = 1
+            with torch.no_grad():
+                states['frame_prediction'] = torch.zeros(input_shape, device=self.device, dtype=torch.float32)
+                states['timestep'] = 1
             
         return states
         
@@ -168,15 +169,12 @@ class Prednet(nn.Module):
             if self.is_not_top_layer(l):
                 inputs.append(R_upper)
                 
-            inputs_torch = Variable(torch.cat(inputs, dim=-3), requires_grad=True)
+            inputs_torch = torch.cat(inputs, dim=-3)
             
             in_gate = self.hard_sigmoid(self.conv_layers['i'][l](inputs_torch))
             forget_gate = self.hard_sigmoid(self.conv_layers['f'][l](inputs_torch))
             out_gate = self.hard_sigmoid(self.conv_layers['o'][l](inputs_torch))
             cell_state = self.tanh(self.conv_layers['c'][l](inputs_torch))
-            
-            if not isinstance(c_current[l], Variable):
-                c_current[l] = Variable(c_current[l], requires_grad=True)
             
             c_next = forget_gate * c_current[l] + in_gate * cell_state
             lstm_act = self.get_activation(self.lstm_activation)
