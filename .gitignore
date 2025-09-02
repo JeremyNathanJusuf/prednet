@@ -12,6 +12,7 @@ wheels/
 # Folders
 kitti_data
 checkpoints
+runs
 
 # Files
 test.ipynb
