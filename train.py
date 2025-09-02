@@ -17,7 +17,7 @@ device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_availabl
 
 # Training parameters
 nb_epoch = 150
-batch_size = 4
+batch_size = 32
 samples_per_epoch = 500
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 1
