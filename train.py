@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 
 from kitti_data_utils import KittiDataloader
+from early_stopping import EarlyStopping
 from prednet import Prednet
 
 # DATA DIR
@@ -20,6 +21,11 @@ batch_size = 4
 samples_per_epoch = 500
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 1
+patience = 5
+
+# Model Checkpointing
+num_save = 10
+checkpoint_dir = './checkpoints'
 
 # Model parameters
 n_channels, im_height, im_width = (3, 128, 160)
@@ -29,7 +35,7 @@ R_stack_sizes = A_stack_sizes
 A_filter_sizes = (3, 3, 3)
 Ahat_filter_sizes = (3, 3, 3, 3)
 R_filter_sizes = (3, 3, 3, 3)
-layer_loss_weights = np.array([1., 0., 0., 0.]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
+layer_loss_weights = np.array([1., 0.1, 0.1, 0.1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
 layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
 nt = 10  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
@@ -38,6 +44,25 @@ time_loss_weights[0] = 0
 # LR scheduler
 lr_lambda = lambda epoch: 0.001 if epoch < 75 else 0.0001
 
+def save_model(model, optimizer, epoch, train_error):
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}.pth')
+    
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'train_error': train_error,
+    }, model_path)
+    
+    print(f'saved model to: {model_path}')
+    
+def load_model(model, optimizer, model_path):
+    checkpoint = torch.load(model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    return model, optimizer
 
 def train():
     # Create TensorBoard writer
@@ -85,15 +110,21 @@ def train():
     )
     model.to(device=device)
     
+    early_stopping = EarlyStopping(patience=patience)
+    
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     train_error_list, val_error_list = [], []
 
-    global_step = 0
+    global_step = 1
     
-    for epoch in range(nb_epoch):
+    for epoch in range(1, nb_epoch+1):
+        
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch)
+        
+        if epoch % num_save == 0:
+            save_model(model, optimizer, epoch, train_error)
         
         train_error_list.append(train_error)
         val_error_list.append(val_error)
@@ -105,6 +136,12 @@ def train():
         print(f'Epoch {epoch:2d} | Train Error: {np.mean(train_error):3f} | Val Error: {np.mean(val_error):3f}')
         
         torch.cuda.empty_cache()
+        
+        early_stopping(val_loss=val_error)
+        
+        if early_stopping.early_stop:
+            print('Stop training')
+            break
     
     writer.close()
     print(f"Training completed. TensorBoard logs saved to: {log_dir}")
@@ -185,3 +222,32 @@ def val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch
 
 if __name__ == '__main__':
     train()
+    
+    # n_channels = 3
+    # img_height = 128
+    # img_width  = 160
+
+    # A_stack_sizes = (n_channels, 48, 96, 192)
+    # R_stack_sizes = A_stack_sizes
+    # A_filter_sizes = (3, 3, 3)
+    # Ahat_filter_sizes = (3, 3, 3, 3)
+    # R_filter_sizes = (3, 3, 3, 3)
+    
+    
+    # prednet = Prednet(
+    #     A_stack_sizes=A_stack_sizes, 
+    #     R_stack_sizes=R_stack_sizes, 
+    #     A_filter_sizes=A_filter_sizes, 
+    #     R_filter_sizes=R_filter_sizes, 
+    #     Ahat_filter_sizes=Ahat_filter_sizes,
+    #     pixel_max=1,
+    #     lstm_activation='relu', 
+    #     A_activation='relu', 
+    #     extrap_time=None, 
+    #     output_type='all'
+    # )
+    # optimizer = optim.Adam(prednet.parameters())
+    
+    # save_model(prednet, optimizer, 99, 0)
+    # model, optimizer = load_model(prednet, optimizer, model_path='./checkpoints/epoch_99.pth')
+    # print(model)
