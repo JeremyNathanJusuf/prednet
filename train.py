@@ -119,7 +119,7 @@ def train():
     global_step = 1
     
     for epoch in range(1, nb_epoch+1):
-        
+        print(f'training epoch {epoch}')
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch)
         
@@ -150,8 +150,9 @@ def train():
 def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch):
     total_error = 0.0
     step_count = 0
-    
+    print(len(train_dataloader))
     for step, (frames, _) in enumerate(train_dataloader):
+        print(f'training step {step}')
         initial_states = model.get_initial_states(input_shape)
         
         output_list = model(frames.to(device), initial_states)
