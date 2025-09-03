@@ -12,8 +12,9 @@ from kitti_data_utils import KittiDataloader
 from early_stopping import EarlyStopping
 from prednet import Prednet
 
-load_dotenv()
-wandb_key = os.getenv("WANDB_API_KEY")
+if os.path.exists('.env'):
+    load_dotenv()
+    wandb_key = os.getenv("WANDB_API_KEY")
 
 # Setup logging
 logging.basicConfig(
