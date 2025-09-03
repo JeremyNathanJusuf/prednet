@@ -38,11 +38,11 @@ nb_epoch = 150
 batch_size = 16
 samples_per_epoch = 500
 N_seq_val = 100  # number of sequences to use for validation
-num_workers = 1
+num_workers = 4
 patience = 5
 
 # Model Checkpointing
-num_save = 10
+num_save = 1000
 checkpoint_dir = './checkpoints'
 
 # Model parameters
@@ -73,7 +73,7 @@ def save_model(model, optimizer, epoch, step, train_error):
         'train_error': train_error,
     }, model_path)
     
-    logger.info(f'Saved model to: {model_path}')
+    print(f'Saved model to: {model_path}')
     
 def load_model(model, optimizer, model_path):
     checkpoint = torch.load(model_path)
@@ -168,40 +168,40 @@ def train():
         train_error_list.append(avg_train_error)
         val_error_list.append(avg_val_error)
         
-        # Log metrics
-        # writer.add_scalar('Loss/Train_Epoch', avg_train_error, updated_global_step - 1)
-        # writer.add_scalar('Loss/Val_Epoch', avg_val_error, updated_global_step - 1)
-        # writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], updated_global_step - 1)
-        # wandb.log({
-        #     "epoch": epoch,
-        #     "train_error": avg_train_error,
-        #     "val_error": avg_val_error,
-        #     "learning_rate": optimizer.param_groups[0]['lr']
-        # }, step=epoch)
+        # Log epoch-level metrics
+        writer.add_scalar('Loss/Train_Epoch', avg_train_error, global_step - 1)
+        writer.add_scalar('Loss/Val_Epoch', avg_val_error, global_step - 1)
+        writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], global_step - 1)
+        wandb.log({
+            "epoch": epoch,
+            "train_error_epoch": avg_train_error,
+            "val_error_epoch": avg_val_error,
+            "learning_rate_epoch": optimizer.param_groups[0]['lr']
+        }, step=global_step - 1)
         
-        logger.info(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
+        print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
         
         torch.cuda.empty_cache()
         
         early_stopping(val_loss=avg_val_error)
         
         if early_stopping.early_stop:
-            logger.info('Early stopping triggered - stopping training')
+            print('Early stopping triggered - stopping training')
             break
     
     writer.close()
     wandb.finish()
-    logger.info(f"Training completed. TensorBoard logs saved to: {log_dir}")
-    logger.info("Wandb logging completed")
+    print(f"Training completed. TensorBoard logs saved to: {log_dir}")
+    print("Wandb logging completed")
 
 
 def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch):
     total_error = 0.0
-    logger.info(f'Starting epoch: {epoch}')
+    print(f'Starting epoch: {epoch}')
     
     for step, (frames, _) in enumerate(train_dataloader, start=1):
         # if step > 30: break
-        logger.info(f"Epoch: {epoch} step: {step} global step: {global_step}")
+        print(f"Epoch: {epoch} step: {step} global step: {global_step}")
         
         initial_states = model.get_initial_states(input_shape)
         
@@ -252,7 +252,7 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
 
 def val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch):
     total_error = 0.0
-    logger.info('Starting validation')
+    print('Starting validation')
     
     with torch.no_grad(): 
         for step, (frames, _) in enumerate(val_dataloader, start=1):
