@@ -3,11 +3,28 @@ import numpy as np
 import torch
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+from dotenv import load_dotenv
 import time
+import logging
+import wandb
 
 from kitti_data_utils import KittiDataloader
 from early_stopping import EarlyStopping
 from prednet import Prednet
+
+load_dotenv()
+wandb_key = os.getenv("WANDB_API_KEY")
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('training.log')
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # DATA DIR
 DATA_DIR = './kitti_data'
@@ -17,7 +34,7 @@ device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_availabl
 
 # Training parameters
 nb_epoch = 150
-batch_size = 16
+batch_size = 4
 samples_per_epoch = 500
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 1
@@ -44,9 +61,9 @@ time_loss_weights[0] = 0
 # LR scheduler
 lr_lambda = lambda epoch: 0.001 if epoch < 75 else 0.0001
 
-def save_model(model, optimizer, epoch, train_error):
+def save_model(model, optimizer, epoch, step, train_error):
     os.makedirs(checkpoint_dir, exist_ok=True)
-    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}.pth')
+    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}_step_{step}.pth')
     
     torch.save({
         'epoch': epoch,
@@ -55,7 +72,7 @@ def save_model(model, optimizer, epoch, train_error):
         'train_error': train_error,
     }, model_path)
     
-    print(f'saved model to: {model_path}')
+    logger.info(f'Saved model to: {model_path}')
     
 def load_model(model, optimizer, model_path):
     checkpoint = torch.load(model_path)
@@ -65,10 +82,32 @@ def load_model(model, optimizer, model_path):
     return model, optimizer
 
 def train():
-    # Create TensorBoard writer
+    # Create TensorBoard and WandB writers
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     log_dir = f"runs/prednet_training_{timestamp}"
     writer = SummaryWriter(log_dir)
+    
+    wandb.init(
+        project="prednet-kitti",
+        name=f"prednet_training_{timestamp}",
+        config={
+            "epochs": nb_epoch,
+            "batch_size": batch_size,
+            "learning_rate": 0.001,
+            "patience": patience,
+            "n_channels": n_channels,
+            "im_height": im_height,
+            "im_width": im_width,
+            "A_stack_sizes": A_stack_sizes,
+            "R_stack_sizes": R_stack_sizes,
+            "A_filter_sizes": A_filter_sizes,
+            "Ahat_filter_sizes": Ahat_filter_sizes,
+            "R_filter_sizes": R_filter_sizes,
+            "layer_loss_weights": layer_loss_weights.cpu().numpy().tolist(),
+            "nt": nt,
+            "device": device
+        }
+    )
     
     train_file = os.path.join(DATA_DIR, 'X_train.hkl')
     train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
@@ -119,46 +158,59 @@ def train():
     global_step = 1
     
     for epoch in range(1, nb_epoch+1):
-        print(f'training epoch {epoch}')
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch)
         
-        if epoch % num_save == 0:
-            save_model(model, optimizer, epoch, train_error)
+        avg_train_error = train_error / len(train_dataloader)
+        avg_val_error = val_error / len(val_dataloader)
         
-        train_error_list.append(train_error)
-        val_error_list.append(val_error)
+        train_error_list.append(avg_train_error)
+        val_error_list.append(avg_val_error)
         
-        writer.add_scalar('Loss/Train_Epoch', np.mean(train_error), epoch)
-        writer.add_scalar('Loss/Val_Epoch', np.mean(val_error), epoch)
-        writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
+        # Log metrics
+        # writer.add_scalar('Loss/Train_Epoch', avg_train_error, updated_global_step - 1)
+        # writer.add_scalar('Loss/Val_Epoch', avg_val_error, updated_global_step - 1)
+        # writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], updated_global_step - 1)
+        # wandb.log({
+        #     "epoch": epoch,
+        #     "train_error": avg_train_error,
+        #     "val_error": avg_val_error,
+        #     "learning_rate": optimizer.param_groups[0]['lr']
+        # }, step=epoch)
         
-        print(f'Epoch {epoch:2d} | Train Error: {np.mean(train_error):3f} | Val Error: {np.mean(val_error):3f}')
+        logger.info(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
         
         torch.cuda.empty_cache()
         
-        early_stopping(val_loss=val_error)
+        early_stopping(val_loss=avg_val_error)
         
         if early_stopping.early_stop:
-            print('Stop training')
+            logger.info('Early stopping triggered - stopping training')
             break
     
     writer.close()
-    print(f"Training completed. TensorBoard logs saved to: {log_dir}")
+    wandb.finish()
+    logger.info(f"Training completed. TensorBoard logs saved to: {log_dir}")
+    logger.info("Wandb logging completed")
 
 
 def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch):
     total_error = 0.0
-    step_count = 0
-    print(len(train_dataloader))
-    for step, (frames, _) in enumerate(train_dataloader):
-        print(f'training step {step}')
+    logger.info(f'Starting epoch: {epoch}')
+    
+    for step, (frames, _) in enumerate(train_dataloader, start=1):
+        # if step > 30: break
+        logger.info(f"Epoch: {epoch} step: {step} global step: {global_step}")
+        
         initial_states = model.get_initial_states(input_shape)
         
         output_list = model(frames.to(device), initial_states)
         error = 0.0
         
         for t, output in enumerate(output_list):
+            # print(output)
+            # print(torch.matmul(output, layer_loss_weights))
+            # return
             # assert output.size() == (batch_size, model.nb_layers), 'wrong size for output'
             # print(output.size(), layer_loss_weights.size(), output.dtype, layer_loss_weights.dtype)
             weighted_layer_error = torch.matmul(output, layer_loss_weights)
@@ -173,14 +225,22 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
         error.backward()
         optimizer.step()
         
-        writer.add_scalar('Loss/Train_Step', error.item(), global_step)
-        writer.add_scalar('Loss/Train_Step_Avg', total_error.item() / (step + 1), global_step)
+        # Log metrics
+        avg_error_so_far = total_error / step
+        writer.add_scalar('Loss/Train_Step_Avg', avg_error_so_far.item(), global_step)
         writer.add_scalar('Learning_Rate_Step', optimizer.param_groups[0]['lr'], global_step)
+    
+        wandb.log({
+            "train_step_error": error.item(),
+            "train_step_avg_error": avg_error_so_far.item(),
+            "learning_rate_step": optimizer.param_groups[0]['lr']
+        }, step=global_step)
+        
+        if global_step % num_save == 0 or step == len(train_dataloader)-1:
+            save_model(model, optimizer, epoch, global_step, avg_error_so_far.item())
         
         global_step += 1
-        step_count += 1
         
-        # Explicitly delete variables to free memory
         del initial_states, output_list, error
         torch.cuda.empty_cache()  # Clear GPU cache
         
@@ -191,11 +251,11 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
 
 def val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch):
     total_error = 0.0
-    step_count = 0
+    logger.info('Starting validation')
     
-    with torch.no_grad():  # Disable gradient computation for validation
-        for step, (frames, _) in enumerate(val_dataloader):
-            # Create fresh initial states for each batch
+    with torch.no_grad(): 
+        for step, (frames, _) in enumerate(val_dataloader, start=1):
+            # if step > 3: break
             initial_states = model.get_initial_states(input_shape)
             
             output_list = model(frames.to(device), initial_states)
@@ -211,10 +271,6 @@ def val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch
                 error += time_loss_weights[t] * torch.mean(weighted_layer_error)
             
             total_error += error
-            step_count += 1
-            
-            writer.add_scalar('Loss/Val_Step', error.item(), global_step + step)
-            writer.add_scalar('Loss/Val_Step_Avg', total_error.item() / step_count, global_step + step)
             
             del initial_states, output_list, error
             

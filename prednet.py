@@ -226,7 +226,7 @@ class Prednet(nn.Module):
         }    
         
         if self.extrap_time:
-            states['frame_prediction'] = frame_prediction,
+            states['frame_prediction'] = frame_prediction
             states['timestep'] = timestep + 1
         
         return output, states
