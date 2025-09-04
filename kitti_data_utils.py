@@ -88,7 +88,7 @@ class KittiDataloader:
         dataloader = DataLoader(
             kitti_dataset, 
             batch_size=self.batch_size, 
-            shuffle=False, 
+            shuffle=True, 
             num_workers=self.num_workers,
             drop_last=True
         )

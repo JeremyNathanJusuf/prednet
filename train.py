@@ -36,13 +36,14 @@ device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_availabl
 # Training parameters
 nb_epoch = 150
 batch_size = 16
-samples_per_epoch = 500
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 4
 patience = 5
+init_lr = 0.005
+latter_lr = 0.001
 
 # Model Checkpointing
-num_save = 1000
+num_save = 1
 checkpoint_dir = './checkpoints'
 
 # Model parameters
@@ -60,17 +61,17 @@ time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps e
 time_loss_weights[0] = 0
 
 # LR scheduler
-lr_lambda = lambda epoch: 0.001 if epoch < 75 else 0.0001
+lr_lambda = lambda epoch: init_lr if epoch < 75 else latter_lr
 
-def save_model(model, optimizer, epoch, step, train_error):
+def save_model(model, optimizer, epoch, avg_train_error):
     os.makedirs(checkpoint_dir, exist_ok=True)
-    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}_step_{step}.pth')
+    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}.pth')
     
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'train_error': train_error,
+        'avg_train_error': avg_train_error,
     }, model_path)
     
     print(f'Saved model to: {model_path}')
@@ -94,7 +95,7 @@ def train():
         config={
             "epochs": nb_epoch,
             "batch_size": batch_size,
-            "learning_rate": 0.001,
+            "learning_rate": init_lr,
             "patience": patience,
             "n_channels": n_channels,
             "im_height": im_height,
@@ -152,7 +153,7 @@ def train():
     
     early_stopping = EarlyStopping(patience=patience)
     
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=init_lr)
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     train_error_list, val_error_list = [], []
 
@@ -180,6 +181,10 @@ def train():
         }, step=global_step - 1)
         
         print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
+        
+        # save model
+        if epoch % num_save == 0:
+            save_model(model, optimizer, epoch, avg_train_error)
         
         torch.cuda.empty_cache()
         
@@ -237,8 +242,8 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
             "learning_rate_step": optimizer.param_groups[0]['lr']
         }, step=global_step)
         
-        if global_step % num_save == 0 or step == len(train_dataloader)-1:
-            save_model(model, optimizer, epoch, global_step, avg_error_so_far.item())
+        # if global_step % num_save == 0 or step == len(train_dataloader)-1:
+        #     save_model(model, optimizer, epoch, global_step, avg_error_so_far.item())
         
         global_step += 1
         
