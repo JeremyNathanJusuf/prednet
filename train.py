@@ -39,8 +39,8 @@ batch_size = 16
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 4
 patience = 5
-init_lr = 0.005
-latter_lr = 0.001
+init_lr = 0.001
+latter_lr = 0.0001
 
 # Model Checkpointing
 num_save = 1
@@ -61,7 +61,7 @@ time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps e
 time_loss_weights[0] = 0
 
 # LR scheduler
-lr_lambda = lambda epoch: init_lr if epoch < 75 else latter_lr
+lr_lambda = lambda epoch: 1.0 if epoch < 75 else (latter_lr / init_lr)
 
 def save_model(model, optimizer, epoch, avg_train_error):
     os.makedirs(checkpoint_dir, exist_ok=True)
