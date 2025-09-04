@@ -149,16 +149,18 @@ def train():
         device=device
     )
     model.to(device=device)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    
+    model, optimizer = load_model(model, optimizer, './checkpoints/epoch_8_step_20439.pth')
     
     early_stopping = EarlyStopping(patience=patience)
     
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     train_error_list, val_error_list = [], []
 
-    global_step = 1
+    global_step = 20440
     
-    for epoch in range(1, nb_epoch+1):
+    for epoch in range(9, nb_epoch+1):
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch)
         
