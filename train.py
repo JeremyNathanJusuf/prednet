@@ -151,7 +151,7 @@ def train():
     model.to(device=device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
-    model, optimizer = load_model(model, optimizer, '/kaggle/input/epoch_8_step_20439.pth')
+    model, optimizer = load_model(model, optimizer, '/kaggle/input/prednet-epoch-8/pytorch/v1/1/epoch_8_step_20439.pth')
     
     early_stopping = EarlyStopping(patience=patience)
     
