@@ -14,7 +14,7 @@ wheels/
 
 # Folders
 kitti_data
-checkpoints
+# checkpoints
 runs
 wandb
 
