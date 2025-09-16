@@ -14,11 +14,18 @@ wheels/
 
 # Folders
 kitti_data
+mnist_data
 checkpoints
 runs
 wandb
+error
+output
+predictions
 
 # Files
 test.ipynb
 train_backup.py
 training.log
+train.sh
+eval.sh
+eval.py

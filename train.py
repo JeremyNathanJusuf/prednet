@@ -8,9 +8,10 @@ import time
 import logging
 import wandb
 
-from kitti_data_utils import KittiDataloader
-from early_stopping import EarlyStopping
+from utils import KittiDataloader
+from utils import EarlyStopping
 from prednet import Prednet
+from utils.mnist import MNISTDataloader, split_mnist_data
 
 if os.path.exists('.env'):
     load_dotenv()
@@ -28,16 +29,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # DATA DIR
-DATA_DIR = './kitti_data'
+MNIST_DATA_DIR = './mnist_data/mnist_test_seq.npy'
 
 # Device
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training parameters
 nb_epoch = 150
-batch_size = 16
+batch_size = 32
 N_seq_val = 100  # number of sequences to use for validation
-num_workers = 4
+num_workers = 2
 patience = 5
 init_lr = 0.001
 latter_lr = 0.0001
@@ -47,16 +48,16 @@ num_save = 1
 checkpoint_dir = './checkpoints'
 
 # Model parameters
-n_channels, im_height, im_width = (3, 128, 160)
+n_channels, im_height, im_width = (1, 64, 64)
 input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 48, 96, 192)
+A_stack_sizes = (n_channels, 48, 96)
 R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3)
-layer_loss_weights = np.array([1., 0.1, 0.1, 0.1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
+A_filter_sizes = (3, 3)
+Ahat_filter_sizes = (3, 3, 3)
+R_filter_sizes = (3, 3, 3)
+layer_loss_weights = np.array([1., 0.1, 0.1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
 layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
-nt = 10  # number of timesteps used for sequences in training
+nt = 5  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
 time_loss_weights[0] = 0
 
@@ -110,29 +111,19 @@ def train():
             "device": device
         }
     )
-    
-    train_file = os.path.join(DATA_DIR, 'X_train.hkl')
-    train_sources = os.path.join(DATA_DIR, 'sources_train.hkl')
-    val_file = os.path.join(DATA_DIR, 'X_val.hkl')
-    val_sources = os.path.join(DATA_DIR, 'sources_val.hkl')
+    train_path, val_path = split_mnist_data(datapath=MNIST_DATA_DIR, nt=nt)
+    train_file = os.path.join(train_path)
+    val_file = os.path.join(val_path)
 
-    train_dataloader = KittiDataloader(
+    train_dataloader = MNISTDataloader(
         data_path=train_file,
-        source_path=train_sources,
-        nt=nt,
         batch_size=batch_size, 
-        sequence_start_mode='all',
-        output_mode='error',
         num_workers=num_workers
     ).dataloader()
     
-    val_dataloader = KittiDataloader(
+    val_dataloader = MNISTDataloader(
         data_path=val_file,
-        source_path=val_sources,
-        nt=nt,
         batch_size=batch_size, 
-        sequence_start_mode='all',
-        output_mode='error',
         num_workers=num_workers
     ).dataloader()
     
@@ -154,6 +145,9 @@ def train():
     early_stopping = EarlyStopping(patience=patience)
     
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
+    
+    # model, optimizer = load_model(model, optimizer, './checkpoints/epoch_19.pth')
+    
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     train_error_list, val_error_list = [], []
 
@@ -204,7 +198,7 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
     total_error = 0.0
     print(f'Starting epoch: {epoch}')
     
-    for step, (frames, _) in enumerate(train_dataloader, start=1):
+    for step, frames in enumerate(train_dataloader, start=1):
         # if step > 30: break
         print(f"Epoch: {epoch} step: {step} global step: {global_step}")
         
@@ -260,7 +254,7 @@ def val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch
     print('Starting validation')
     
     with torch.no_grad(): 
-        for step, (frames, _) in enumerate(val_dataloader, start=1):
+        for step, frames in enumerate(val_dataloader, start=1):
             # if step > 3: break
             initial_states = model.get_initial_states(input_shape)
             

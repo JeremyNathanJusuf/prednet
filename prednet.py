@@ -55,7 +55,7 @@ class Prednet(nn.Module):
                     if self.is_not_top_layer(l):
                         self.conv_layers[c].append(
                             nn.Conv2d(
-                                in_channels=self.R_stack_sizes[l]*2,
+                                in_channels=self.A_stack_sizes[l]*2,
                                 out_channels=self.A_stack_sizes[l+1],
                                 kernel_size=self.A_filter_sizes[l],
                                 stride=(1,1),
@@ -249,15 +249,15 @@ class Prednet(nn.Module):
 
 
 if __name__ =='__main__':
-    n_channels = 3
-    img_height = 128
-    img_width  = 160
+    n_channels = 1
+    img_height = 64
+    img_width  = 64
 
-    A_stack_sizes = (n_channels, 48, 96, 192)
+    A_stack_sizes = (n_channels, 48, 96)
     R_stack_sizes = A_stack_sizes
-    A_filter_sizes = (3, 3, 3)
-    Ahat_filter_sizes = (3, 3, 3, 3)
-    R_filter_sizes = (3, 3, 3, 3)
+    A_filter_sizes = (3, 3)
+    Ahat_filter_sizes = (3, 3, 3)
+    R_filter_sizes = (3, 3, 3)
     
     prednet = Prednet(
         A_stack_sizes=A_stack_sizes, 
@@ -271,6 +271,7 @@ if __name__ =='__main__':
         extrap_time=None, 
         output_type='all'
     )
+    print(prednet)
     
     
     
