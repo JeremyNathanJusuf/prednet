@@ -7,11 +7,23 @@ from sklearn.model_selection import train_test_split
 def split_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
     X = np.load(datapath)  # (20, batch, h, w)
     X = np.transpose(X, [1, 0, 2, 3])  # (batch, 20, h, w)
-    X = X[:, :nt, ...]  # (batch, nt, h, w)
-    X = np.expand_dims(X, axis=2)  # (batch, nt, 1, h, w)
+    batch, total_frames, h, w = X.shape
+
+    subsequences = []
+    for i in range(batch):
+        num_chunks = total_frames // nt
+        
+        for chunk_idx in range(num_chunks):
+            start_idx = chunk_idx * nt
+            end_idx = start_idx + nt
+            subseq = X[i, start_idx:end_idx, ...]  # (nt, h, w)
+            subsequences.append(subseq)
+            
+    subsequences = np.stack(subsequences, axis=0)  # (num_subseq, nt, h, w)
+    subsequences = np.expand_dims(subsequences, axis=2)  # (num_subseq, nt, 1, h, w)
 
     train_X, val_X = train_test_split(
-        X, 
+        subsequences, 
         train_size=train_ratio, 
         random_state=random_state, 
         shuffle=True
@@ -36,7 +48,9 @@ class MNISTDataset(Dataset):
         return X.astype(np.float32) / 255.
     
     def __getitem__(self, pos_idx):
-        return self.preprocess(self.X[pos_idx, ...])
+        x = self.X[pos_idx, ...]
+        x = self.preprocess(x)
+        return x
     
     def __len__(self):
         return len(self.X)

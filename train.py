@@ -8,7 +8,6 @@ import time
 import logging
 import wandb
 
-from utils import KittiDataloader
 from utils import EarlyStopping
 from prednet import Prednet
 from utils.mnist import MNISTDataloader, split_mnist_data
@@ -39,7 +38,7 @@ nb_epoch = 150
 batch_size = 4
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 2
-patience = 5
+patience = 15
 init_lr = 0.001
 latter_lr = 0.0001
 
@@ -55,7 +54,7 @@ R_stack_sizes = A_stack_sizes
 A_filter_sizes = (3, 3, 3)
 Ahat_filter_sizes = (3, 3, 3, 3)
 R_filter_sizes = (3, 3, 3, 3)
-layer_loss_weights = np.array([1., 0.1, 0.1, 0.1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
+layer_loss_weights = np.array([1., 0., 0., 0.]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
 layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
 nt = 5  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
@@ -91,7 +90,7 @@ def train():
     writer = SummaryWriter(log_dir)
     
     wandb.init(
-        project="prednet-kitti",
+        project="prednet-mnist",
         name=f"prednet_training_{timestamp}",
         config={
             "epochs": nb_epoch,
