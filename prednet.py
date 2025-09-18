@@ -212,7 +212,7 @@ class Prednet(nn.Module):
             output = frame_prediction
         else:
             for l in range(self.nb_layers):
-                layer_error = torch.mean(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
+                layer_error = torch.sum(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
                 all_error = layer_error if l == 0 else torch.cat((all_error, layer_error), dim=-1)
             if self.output_type == 'error':
                 output = all_error

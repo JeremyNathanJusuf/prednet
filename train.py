@@ -35,9 +35,9 @@ device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_availabl
 
 # Training parameters
 nb_epoch = 150
-batch_size = 4
+batch_size = 32
 N_seq_val = 100  # number of sequences to use for validation
-num_workers = 2
+num_workers = 4
 patience = 15
 init_lr = 0.001
 latter_lr = 0.0001
@@ -54,7 +54,7 @@ R_stack_sizes = A_stack_sizes
 A_filter_sizes = (3, 3, 3)
 Ahat_filter_sizes = (3, 3, 3, 3)
 R_filter_sizes = (3, 3, 3, 3)
-layer_loss_weights = np.array([1., 0., 0., 0.]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
+layer_loss_weights = np.array([1., .1, .1, .1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
 layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
 nt = 5  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
@@ -132,7 +132,7 @@ def train():
         A_filter_sizes=A_filter_sizes, 
         R_filter_sizes=R_filter_sizes, 
         Ahat_filter_sizes=Ahat_filter_sizes,
-        pixel_max=1,
+        pixel_max=1.0,
         lstm_activation='relu', 
         A_activation='relu', 
         extrap_time=None, 

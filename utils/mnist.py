@@ -9,17 +9,19 @@ def split_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
     X = np.transpose(X, [1, 0, 2, 3])  # (batch, 20, h, w)
     batch, total_frames, h, w = X.shape
 
-    subsequences = []
+    # Calculate total number of subsequences to pre-allocate array
+    num_chunks = total_frames // nt
+    total_subseq = batch * num_chunks
+    subsequences = np.zeros((total_subseq, nt, h, w), dtype=X.dtype)
+    
+    subseq_idx = 0
     for i in range(batch):
-        num_chunks = total_frames // nt
-        
         for chunk_idx in range(num_chunks):
             start_idx = chunk_idx * nt
             end_idx = start_idx + nt
-            subseq = X[i, start_idx:end_idx, ...]  # (nt, h, w)
-            subsequences.append(subseq)
+            subsequences[subseq_idx] = X[i, start_idx:end_idx, ...]  # (nt, h, w)
+            subseq_idx += 1
             
-    subsequences = np.stack(subsequences, axis=0)  # (num_subseq, nt, h, w)
     subsequences = np.expand_dims(subsequences, axis=2)  # (num_subseq, nt, 1, h, w)
 
     train_X, val_X = train_test_split(
@@ -45,7 +47,9 @@ class MNISTDataset(Dataset):
         self.X = np.load(data_path)  # (batch, nt, 1, h, w)
         
     def preprocess(self, X):
-        return X.astype(np.float32) / 255.
+        X = X.astype(np.float32) / 255.0
+        X = np.clip(X, 0.0, 1.0)
+        return X
     
     def __getitem__(self, pos_idx):
         x = self.X[pos_idx, ...]
