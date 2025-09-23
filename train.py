@@ -49,12 +49,12 @@ checkpoint_dir = './checkpoints'
 # Model parameters
 n_channels, im_height, im_width = (1, 64, 64)
 input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 48, 96, 192)
+A_stack_sizes = (n_channels, 24, 48)
 R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3)
-layer_loss_weights = np.array([1., .1, .1, .1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
+A_filter_sizes = (3, 3)
+Ahat_filter_sizes = (3, 3, 3)
+R_filter_sizes = (3, 3, 3)
+layer_loss_weights = np.array([1., .1, .1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
 layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
 nt = 5  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first

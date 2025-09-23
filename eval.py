@@ -13,17 +13,25 @@ device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_availabl
 
 n_samples = 10
 batch_size = 1
-n_channels, im_height, im_width = (1, 64, 64)
-input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 48, 96, 192)
-R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3)
+# n_channels, im_height, im_width = (1, 64, 64)
+# input_shape = (batch_size, n_channels, im_height, im_width)
+# A_stack_sizes = (n_channels, 48, 96, 192)
+# R_stack_sizes = A_stack_sizes
+# A_filter_sizes = (3, 3, 3)
+# Ahat_filter_sizes = (3, 3, 3, 3)
+# R_filter_sizes = (3, 3, 3, 3)
 nt = 5
 
-model_path = './checkpoints/epoch_69.pth'
-print(model_path)
+n_channels, im_height, im_width = (1, 64, 64)
+input_shape = (batch_size, n_channels, im_height, im_width)
+A_stack_sizes = (n_channels, 24, 48)
+R_stack_sizes = A_stack_sizes
+A_filter_sizes = (3, 3)
+Ahat_filter_sizes = (3, 3, 3)
+R_filter_sizes = (3, 3, 3)
+
+model_path = './checkpoints/epoch_58.pth'
+# print(model_path)
 
 def load_model(model, model_path):
     checkpoint = torch.load(model_path, map_location=device)
@@ -80,7 +88,7 @@ def evaluate_dataset(data_split):
             original = frames.squeeze(0).cpu().numpy()  # (nt, c, h, w)
             predicted = torch.stack(predictions).cpu().numpy()  # (nt, batch, c, h, w)
             predicted = predicted.squeeze(1)  # Remove batch dimension: (nt, c, h, w)
-            print("LOL", predicted.sum(), original.sum())
+            # print("LOL", predicted.sum(), original.sum())
             
             save_sequence_plot(original, predicted, output_dir, f'{data_split}_{samples_collected + 1}.png')
             samples_collected += 1
