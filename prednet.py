@@ -196,8 +196,17 @@ class Prednet(nn.Module):
                 Ahat = torch.clamp(Ahat, max=self.pixel_max)
                 frame_prediction = Ahat
             # print(Ahat.shape, A.shape)
+            
+            # Option 1: Original L1-like error (ReLU-based)
             E_pos = self.relu(Ahat - A)
             E_neg = self.relu(A - Ahat)
+            
+            # Option 2: MSE-like error (squared differences) - EXPERIMENTAL
+            # diff = Ahat - A
+            # E_squared = diff * diff  # Squared error
+            # E_pos = self.relu(diff) * self.relu(diff)  # Squared positive error
+            # E_neg = self.relu(-diff) * self.relu(-diff)  # Squared negative error
+            
             E_list.append(torch.cat([E_neg, E_pos], dim=-3))
             
             # TODO: Extract the outputs from certain module and layer
@@ -212,7 +221,7 @@ class Prednet(nn.Module):
             output = frame_prediction
         else:
             for l in range(self.nb_layers):
-                layer_error = torch.sum(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
+                layer_error = torch.mean(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
                 all_error = layer_error if l == 0 else torch.cat((all_error, layer_error), dim=-1)
             if self.output_type == 'error':
                 output = all_error
