@@ -190,7 +190,7 @@ class Prednet(nn.Module):
         for l in range(self.nb_layers):
             # ReLU(Conv(R_l^t))
             Ahat = self.conv_layers['Ahat'][2*l](R_list[l])
-            Ahat = self.conv_layers['Ahat'][2*l+1](Ahat)
+            # Ahat = self.conv_layers['Ahat'][2*l+1](Ahat)
             
             if l == 0:
                 Ahat = torch.clamp(Ahat, max=self.pixel_max)
@@ -219,6 +219,12 @@ class Prednet(nn.Module):
         
         if self.output_type == 'prediction':
             output = frame_prediction
+        elif self.output_type == 'both':
+            # Return both prediction and error for training with MSE+brightness losses
+            for l in range(self.nb_layers):
+                layer_error = torch.mean(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
+                all_error = layer_error if l == 0 else torch.cat((all_error, layer_error), dim=-1)
+            output = (frame_prediction, all_error)  # Return tuple!
         else:
             for l in range(self.nb_layers):
                 layer_error = torch.mean(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)

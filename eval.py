@@ -24,13 +24,13 @@ nt = 5
 
 n_channels, im_height, im_width = (1, 64, 64)
 input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 12, 24)
+A_stack_sizes = (n_channels, 48, 96)
 R_stack_sizes = A_stack_sizes
 A_filter_sizes = (3, 3)
 Ahat_filter_sizes = (3, 3, 3)
 R_filter_sizes = (3, 3, 3)
 
-model_path = './checkpoints/epoch_58.pth'
+model_path = './debug_checkpoints/epoch_15.pth'
 # print(model_path)
 
 def load_model(model, model_path):

@@ -12,10 +12,14 @@ from utils.mnist import MNISTDataloader, split_mnist_data
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Debug training parameters
-nb_epoch = 20
+nb_epoch = 40
 batch_size = 64
 num_workers = 4
 init_lr = 0.001
+
+# Data preprocessing
+background_level = 0.0  # Subtle gray background (0.0=black, 0.05-0.1=subtle gray)
+                         # Helps with gradient flow through ReLU in dark regions
 
 # Darkness penalty configuration
 # ============================================
@@ -23,11 +27,11 @@ init_lr = 0.001
 # ============================================
 
 # Current working config (MSE + Brightness)
-use_mse_loss = False  # Add MSE reconstruction loss (most effective)
-mse_weight = 2.0  # Weight for MSE loss (increased to dominate)
+use_mse_loss = True  # Add MSE reconstruction loss (most effective)
+mse_weight = 3.0  # Weight for MSE loss (increased to dominate)
 
-use_brightness_penalty = False  # Penalize low brightness
-brightness_weight = 1.0  # Weight for brightness penalty (MUCH higher - same as MSE)
+use_brightness_penalty = True  # Penalize low brightness
+brightness_weight = 2.0  # Weight for brightness penalty (MUCH higher - same as MSE)
 
 use_gradient_loss = False  # Match gradient magnitude (edges)
 gradient_weight = 0.5  # Weight for gradient loss
@@ -138,13 +142,15 @@ def train_debug():
     train_dataloader = MNISTDataloader(
         data_path=train_path,
         batch_size=batch_size, 
-        num_workers=num_workers
+        num_workers=num_workers,
+        background_level=background_level
     ).dataloader()
     
     val_dataloader = MNISTDataloader(
         data_path=val_path,
         batch_size=batch_size, 
-        num_workers=num_workers
+        num_workers=num_workers,
+        background_level=background_level
     ).dataloader()
     
     # Initialize model
@@ -158,7 +164,7 @@ def train_debug():
         lstm_activation='relu', 
         A_activation='relu', 
         extrap_time=None, 
-        output_type='error',
+        output_type='both',  # Return both predictions and errors!
         device=device
     )
     model.to(device=device)
@@ -200,26 +206,26 @@ def train_one_epoch(train_dataloader, model, optimizer, input_shape, epoch):
     for step, frames in enumerate(train_dataloader, start=1):
         print(f"  Epoch {epoch}, Step {step}/{len(train_dataloader)}", end='\r')
         
-        initial_states = model.get_initial_states(input_shape)
         frames_device = frames.to(device)
+        # Use actual batch size from current batch
+        actual_batch_size = frames_device.shape[0]
+        input_shape_batch = (actual_batch_size, n_channels, im_height, im_width)
+        initial_states = model.get_initial_states(input_shape_batch)
         
-        # Get error outputs
+        # Single forward pass returns (predictions, errors) tuple
         output_list = model(frames_device, initial_states)
+        
+        # Unpack predictions and errors from tuple
+        predictions = [out[0] for out in output_list]  # List of predictions per timestep
+        errors = [out[1] for out in output_list]  # List of errors per timestep
         
         # Compute standard PredNet error loss
         error = 0.0
-        for t, output in enumerate(output_list):
-            weighted_layer_error = torch.matmul(output, layer_loss_weights)
+        for t, error_output in enumerate(errors):
+            weighted_layer_error = torch.matmul(error_output, layer_loss_weights)
             error += time_loss_weights[t] * torch.mean(weighted_layer_error)
         
-        # Get predictions for additional losses
-        # We need to switch model to prediction mode temporarily
-        model.output_type = 'prediction'
-        initial_states_pred = model.get_initial_states(input_shape)
-        predictions = model(frames_device, initial_states_pred)
-        model.output_type = 'error'  # Switch back
-        
-        # Compute additional losses
+        # Compute additional losses (MSE + brightness) on predictions
         additional_losses = compute_additional_losses(predictions, frames_device)
         
         # Combine all losses
@@ -239,7 +245,7 @@ def train_one_epoch(train_dataloader, model, optimizer, input_shape, epoch):
         total_loss.backward()
         optimizer.step()
         
-        del initial_states, initial_states_pred, output_list, predictions, error, total_loss
+        del initial_states, output_list, predictions, errors, error, total_loss
         torch.cuda.empty_cache()
     
     print()  # New line after progress
@@ -261,16 +267,24 @@ def val_one_epoch(val_dataloader, model, input_shape, epoch):
     
     with torch.no_grad(): 
         for step, frames in enumerate(val_dataloader, start=1):
-            initial_states = model.get_initial_states(input_shape)
-            output_list = model(frames.to(device), initial_states)
+            frames_device = frames.to(device)
+            # Use actual batch size
+            actual_batch_size = frames_device.shape[0]
+            input_shape_batch = (actual_batch_size, n_channels, im_height, im_width)
+            initial_states = model.get_initial_states(input_shape_batch)
+            
+            output_list = model(frames_device, initial_states)
+            
+            # Unpack tuple (predictions, errors) - we only need errors for validation
+            errors = [out[1] for out in output_list]
             
             error = 0.0
-            for t, output in enumerate(output_list):
-                weighted_layer_error = torch.matmul(output, layer_loss_weights)
+            for t, error_output in enumerate(errors):
+                weighted_layer_error = torch.matmul(error_output, layer_loss_weights)
                 error += time_loss_weights[t] * torch.mean(weighted_layer_error)
             
             total_error += error
-            del initial_states, output_list, error
+            del initial_states, output_list, errors, error
             
     return total_error
 
@@ -497,7 +511,8 @@ def evaluate_and_visualize(model_path, n_samples=1):
     dataloader = MNISTDataloader(
         data_path=data_path,
         batch_size=1,  # Process one at a time for visualization
-        num_workers=2
+        num_workers=2,
+        background_level=background_level
     ).dataloader()
     
     samples_collected = 0

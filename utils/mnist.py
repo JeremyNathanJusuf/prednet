@@ -49,12 +49,20 @@ class MNISTDataset(Dataset):
     def __init__(
         self, 
         data_path,
+        background_level=0.0,  # Subtle gray background (0.0 = black, 0.05-0.1 = subtle gray)
     ):
         self.X = np.load(data_path)  # (batch, nt, 1, h, w)
+        self.background_level = background_level
         
     def preprocess(self, X):
         X = X.astype(np.float32) / 255.0
         X = np.clip(X, 0.0, 1.0)
+        
+        # Add subtle gray background to help with gradients
+        if self.background_level > 0:
+            # Shift range from [0, 1] to [background_level, 1]
+            X = X * (1.0 - self.background_level) + self.background_level
+        
         return X
     
     def __getitem__(self, pos_idx):
@@ -71,14 +79,17 @@ class MNISTDataloader:
         data_path,
         batch_size,
         num_workers,
+        background_level=0.0,
     ):
         self.data_path=data_path
         self.batch_size=batch_size
         self.num_workers=num_workers
+        self.background_level=background_level
         
     def dataloader(self):
         mnist_dataset = MNISTDataset(
-            self.data_path
+            self.data_path,
+            background_level=self.background_level
         )
         dataloader = DataLoader(
             mnist_dataset, 
