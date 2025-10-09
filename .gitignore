@@ -21,6 +21,7 @@ wandb
 error
 output
 predictions
+debug_*
 
 # Files
 test.ipynb

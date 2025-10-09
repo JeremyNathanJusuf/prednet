@@ -40,6 +40,9 @@ class KittiDataset(Dataset):
                     idx += 1
             self.possible_starts = possible_starts
             
+        # TODO: remove later on, we overfit with one video
+        self.possible_starts = [100] * 400000
+            
     def preprocess(self, X):
         return X.astype(np.float32) / 255.
     
@@ -47,12 +50,12 @@ class KittiDataset(Dataset):
         idx = self.possible_starts[pos_idx]
         frames = self.preprocess(self.X[idx:idx+self.nt])
         
-        if self.output_mode == 'error':
-            target = 0.
-        elif self.output_mode == 'prediction':
-            target = frames
+        # if self.output_mode == 'error':
+        #     target = 0.
+        # elif self.output_mode == 'prediction':
+        #     target = frames
             
-        return frames, target
+        return frames
     
     def __len__(self):
         return len(self.possible_starts)

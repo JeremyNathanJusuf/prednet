@@ -131,7 +131,7 @@ class Prednet(nn.Module):
         states = {
           'R': R_list,
           'c': c_list, 
-          'E': E_list,
+          'E': E_list
         }    
     
         if self.extrap_time:
@@ -146,6 +146,8 @@ class Prednet(nn.Module):
         #   'R': R_list,
         #   'c': c_list, 
         #   'E': E_list,
+        #   'A': A_list,
+        #   'Ahat': Ahat_list,
         #   'frame_prediction': frame_prediction,
         #   'timestep': timestep
         # }
@@ -159,15 +161,15 @@ class Prednet(nn.Module):
             if timestep >= self.extrap_time:
                 A = frame_prediction
                 
-        R_list, E_list, c_list = [], [], []
+        R_list, E_list, c_list, A_list, Ahat_list = [], [], [], [A], []
         R_upper = None
-        
+
         # Top down pass
         for l in reversed(range(self.nb_layers)):
             # Inputs contain R_l^t-1, E_l^t-1, and R_l+1^t if not the top layer
             inputs = [R_current[l], E_current[l]]
             if self.is_not_top_layer(l):
-                inputs.append(R_upper)
+                inputs.append(R_upper) 
                 
             inputs_torch = torch.cat(inputs, dim=-3)
             
@@ -195,6 +197,10 @@ class Prednet(nn.Module):
             if l == 0:
                 Ahat = torch.clamp(Ahat, max=self.pixel_max)
                 frame_prediction = Ahat
+                Ahat_list.append(frame_prediction)
+            else:
+                Ahat_list.append(Ahat)
+                
             # print(Ahat.shape, A.shape)
             E_pos = self.relu(Ahat - A)
             E_neg = self.relu(A - Ahat)
@@ -207,12 +213,14 @@ class Prednet(nn.Module):
                 A = self.conv_layers['A'][2*l](E_list[l])
                 A = self.conv_layers['A'][2*l+1](A)
                 A = self.pool(A)
+                
+                A_list.append(A)
         
         if self.output_type == 'prediction':
             output = frame_prediction
         else:
             for l in range(self.nb_layers):
-                layer_error = torch.sum(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
+                layer_error = torch.mean(self.batch_flatten(E_list[l]), dim=-1, keepdim=True)
                 all_error = layer_error if l == 0 else torch.cat((all_error, layer_error), dim=-1)
             if self.output_type == 'error':
                 output = all_error
@@ -223,6 +231,8 @@ class Prednet(nn.Module):
           'R': R_list,
           'c': c_list, 
           'E': E_list,
+          'A': A_list,
+          'Ahat': Ahat_list,
         }    
         
         if self.extrap_time:
@@ -234,18 +244,20 @@ class Prednet(nn.Module):
     def forward(self, A0_with_timesteps, initial_states):
         # change (batch, nt, c, h, w) to (nt, batch, c, h, w)
         A0_with_timesteps = A0_with_timesteps.transpose(0, 1)
-        
         nt = A0_with_timesteps.size()[0]
         
         hidden_states = initial_states
         output_list = []
+        hidden_states_list = []
         
         for t in range(nt):
             A = A0_with_timesteps[t, ...]
+            
             output, hidden_states = self.step(A, hidden_states)
+            hidden_states_list.append(hidden_states)
             output_list.append(output)
         
-        return output_list
+        return output_list, hidden_states_list
 
 
 if __name__ =='__main__':
