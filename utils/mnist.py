@@ -25,7 +25,9 @@ def split_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
     np.save(train_path, subsequences)
     return train_path, train_path
     
-    # TODO: revert back to this
+    # ###########
+    
+    # TODO: revert as this is overfitting with one batchsize of 4: revert back to this
     # # Calculate total number of subsequences to pre-allocate array
     # num_chunks = total_frames // nt
     # total_subseq = batch * num_chunks
@@ -56,6 +58,58 @@ def split_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
     # np.save(val_path, val_X)
     
     # return train_path, val_path
+    
+def split_custom_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
+    X = np.load(datapath)  # (batch, nt, channels, h, w)
+    batch, total_frames, channels, h, w = X.shape
+    
+    # TODO: revert as this is overfitting with one batchsize of 4
+    # print("X.shape", X.shape)
+    # subsequences = X[:4, :nt, ...]  # (4, nt, channels, h, w)
+    # final_subsequences = np.zeros((4000, nt, channels, h, w))
+    # for i in range(1000):
+    #     final_subsequences[4*i:4*i+4] = subsequences
+    # print("subsequences.shape", final_subsequences.shape)
+    # parent_dir = os.path.dirname(datapath)
+    # train_path = os.path.join(parent_dir, "custom_mnist_overfit_one_video.npy")
+    
+    #######
+    
+    train_X, val_X = train_test_split(
+        X, 
+        train_size=train_ratio, 
+        random_state=random_state, 
+        shuffle=True
+    )
+
+    parent_dir = os.path.dirname(datapath)
+    train_path = os.path.join(parent_dir, "mnist_train.npy")
+    val_path = os.path.join(parent_dir, "mnist_val.npy")
+
+    np.save(train_path, train_X)
+    np.save(val_path, val_X)
+    print(f"train shape: {train_X.shape}, val shape: {val_X.shape}")
+    return train_path, val_path
+
+    
+class CustomMNISTDataset(Dataset):
+    def __init__(
+        self, 
+        data_path,
+    ):
+        self.X = np.load(data_path)  # (batch, nt, channels, h, w)
+        
+    def preprocess(self, X):
+        X = X.astype(np.float32)
+        return X
+    
+    def __getitem__(self, pos_idx):
+        x = self.X[pos_idx, ...]
+        x = self.preprocess(x)
+        return x
+    
+    def __len__(self):
+        return len(self.X)
 
 class MNISTDataset(Dataset):
     def __init__(
@@ -118,10 +172,16 @@ class MNISTDataloader:
         self.batch_size=batch_size
         self.num_workers=num_workers
         
-    def dataloader(self):
-        mnist_dataset = MNISTDataset(
-            self.data_path
-        )
+    def dataloader(self, mnist_dataset_type):
+        if mnist_dataset_type == "custom_mnist":
+            mnist_dataset = CustomMNISTDataset(
+                self.data_path
+            )
+        else:
+            mnist_dataset = MNISTDataset(
+                self.data_path
+            )
+            
         dataloader = DataLoader(
             mnist_dataset, 
             batch_size=self.batch_size, 

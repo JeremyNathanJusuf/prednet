@@ -11,15 +11,19 @@ import matplotlib.pyplot as plt
 
 from utils import EarlyStopping
 from prednet import Prednet
-from utils.mnist import MNISTDataloader, split_mnist_data
+from utils.mnist import MNISTDataloader, split_custom_mnist_data
 from utils.plot import plot_hidden_states_list
+from utils.dataset_generator import MovingMnistDatasetGenerator
 
 if os.path.exists('.env'):
     load_dotenv()
     wandb_key = os.getenv("WANDB_API_KEY")
 
 # DATA DIR
-MNIST_DATA_DIR = './mnist_data/mnist_test_seq.npy'
+# GENERATE DATASET
+generator = MovingMnistDatasetGenerator(nt=5, h=128, w=128)
+dataset = generator.generate_dataset(num_samples=1000, n_digits=5, max_scale=4)
+MNIST_DATA_DIR = './custom_dataset/mnist_dataset_1000_5.npy'
 
 # Device
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
@@ -31,23 +35,23 @@ N_seq_val = 100  # number of sequences to use for validation
 num_workers = 4
 patience = 15
 init_lr = 0.001
-latter_lr = 0.0001
+latter_lr = 0.0001  
 
 # Model Checkpointing
 num_save = 1
 checkpoint_dir = './checkpoints'
 
 # Model parameters
-n_channels, im_height, im_width = (1, 64, 64)  # KITTI RGB images
+n_channels, im_height, im_width = (3, 128, 128)  # KITTI RGB images
 input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 32, 64, 128, 256, 512)  # Adapted for KITTI
+A_stack_sizes = (n_channels, 32, 64, 128, 256)  # Adapted for KITTI
 R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3, 3, 3)
-layer_loss_weights = np.array([1., .1, .1, .1, .1, .1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
+A_filter_sizes = (3, 3, 3, 3)
+Ahat_filter_sizes = (3, 3, 3, 3, 3)
+R_filter_sizes = (3, 3, 3, 3, 3)
+layer_loss_weights = np.array([1., .1, .1, .1, .1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
 layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
-nt = 3  # number of timesteps used for sequences in training
+nt = 5  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
 time_loss_weights[0] = 0
 
@@ -78,19 +82,19 @@ def debug():
     #         "device": device
     #     }
     # )
-    train_path, val_path = split_mnist_data(datapath=MNIST_DATA_DIR, nt=nt)
+    train_path, val_path = split_custom_mnist_data(datapath=MNIST_DATA_DIR, nt=nt)
 
     train_dataloader = MNISTDataloader(
         data_path=train_path,
         batch_size=batch_size, 
         num_workers=num_workers
-    ).dataloader()
+    ).dataloader(mnist_dataset_type="custom_mnist")
     
     val_dataloader = MNISTDataloader(
         data_path=val_path,
         batch_size=batch_size, 
         num_workers=num_workers
-    ).dataloader()
+    ).dataloader(mnist_dataset_type="custom_mnist")
     
     model = Prednet(
         A_stack_sizes=A_stack_sizes, 
@@ -181,7 +185,7 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
         #     "learning_rate_step": optimizer.param_groups[0]['lr']
         # }, step=global_step)
         
-        if global_step % 1 == 0:
+        if global_step % 500 == 0:
             plot_hidden_states_list(hidden_states_list, frames, global_step)
         
         global_step += 1

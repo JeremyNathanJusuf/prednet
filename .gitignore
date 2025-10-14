@@ -22,6 +22,8 @@ error
 output
 predictions
 debug_*
+data
+custom_dataset
 
 # Files
 test.ipynb
