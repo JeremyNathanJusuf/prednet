@@ -59,7 +59,7 @@ def plot_hidden_states_list(hidden_states_list, frames, global_step):
     num_timesteps = len(hidden_states_list)
     num_layers = len(hidden_states_list[0]['R'])
     
-    for batch_idx in range(frames.shape[0]):
+    for batch_idx in range(max(frames.shape[0], 8)):
         os.makedirs(os.path.join(output_dir, str(batch_idx)), exist_ok=True)
         plot_layer(hidden_states_list, frames, global_step, 'R', output_dir, batch_idx)
         plot_layer(hidden_states_list, frames, global_step, 'A', output_dir, batch_idx)

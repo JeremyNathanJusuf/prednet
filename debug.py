@@ -22,23 +22,23 @@ if os.path.exists('.env'):
 # DATA DIR
 # GENERATE DATASET
 generator = MovingMnistDatasetGenerator(nt=5, h=128, w=128)
-dataset = generator.generate_dataset(num_samples=1000, n_digits=5, max_scale=4)
-MNIST_DATA_DIR = './custom_dataset/mnist_dataset_1000_5.npy'
+dataset = generator.generate_dataset(num_samples=4000, n_digits=5, max_scale=4)
+MNIST_DATA_DIR = './custom_dataset/mnist_dataset_4000_5.npy'
 
 # Device
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training parameters
 nb_epoch = 150
-batch_size = 4
+batch_size = 32
 N_seq_val = 100  # number of sequences to use for validation
 num_workers = 4
 patience = 15
-init_lr = 0.001
+init_lr = 0.005
 latter_lr = 0.0001  
 
 # Model Checkpointing
-num_save = 1
+num_save = 5
 checkpoint_dir = './checkpoints'
 
 # Model parameters
@@ -58,30 +58,49 @@ time_loss_weights[0] = 0
 # LR scheduler
 lr_lambda = lambda epoch: 1.0 if epoch < 75 else (latter_lr / init_lr)
 
+def save_model(model, optimizer, epoch, avg_train_error):
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}.pth')
+    
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'avg_train_error': avg_train_error,
+    }, model_path)
+    
+    print(f'Saved model to: {model_path}')
+
+def load_model(model, optimizer, model_path):
+    checkpoint = torch.load(model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    return model, optimizer
 
 def debug():
     writer = None
-    # wandb.init(
-    #     project="prednet-mnist",
-    #     name=f"prednet_debug",
-    #     config={
-    #         "epochs": nb_epoch,
-    #         "batch_size": batch_size,
-    #         "learning_rate": init_lr,
-    #         "patience": patience,
-    #         "n_channels": n_channels,
-    #         "im_height": im_height,
-    #         "im_width": im_width,
-    #         "A_stack_sizes": A_stack_sizes,
-    #         "R_stack_sizes": R_stack_sizes,
-    #         "A_filter_sizes": A_filter_sizes,
-    #         "Ahat_filter_sizes": Ahat_filter_sizes,
-    #         "R_filter_sizes": R_filter_sizes,
-    #         "layer_loss_weights": layer_loss_weights.cpu().numpy().tolist(),
-    #         "nt": nt,
-    #         "device": device
-    #     }
-    # )
+    wandb.init(
+        project="prednet-mnist",
+        name=f"prednet_debug",
+        config={
+            "epochs": nb_epoch,
+            "batch_size": batch_size,
+            "learning_rate": init_lr,
+            "patience": patience,
+            "n_channels": n_channels,
+            "im_height": im_height,
+            "im_width": im_width,
+            "A_stack_sizes": A_stack_sizes,
+            "R_stack_sizes": R_stack_sizes,
+            "A_filter_sizes": A_filter_sizes,
+            "Ahat_filter_sizes": Ahat_filter_sizes,
+            "R_filter_sizes": R_filter_sizes,
+            "layer_loss_weights": layer_loss_weights.cpu().numpy().tolist(),
+            "nt": nt,
+            "device": device
+        }
+    )
     train_path, val_path = split_custom_mnist_data(datapath=MNIST_DATA_DIR, nt=nt)
 
     train_dataloader = MNISTDataloader(
@@ -113,33 +132,40 @@ def debug():
     
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
     
+    model, opt
+    
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     train_error_list, val_error_list = [], []
 
-    global_step = 1
+    # global_step = 1
+    global_step = 601
     
-    for epoch in range(1, nb_epoch+1):
+    # for epoch in range(1, nb_epoch+1):
+    for epoch in range(7, nb_epoch+1):
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch)
-        # val_error = val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch)
+        val_error = val_one_epoch(val_dataloader, model, input_shape, writer, global_step, epoch)
         
         avg_train_error = train_error / len(train_dataloader)
-        # avg_val_error = val_error / len(val_dataloader)
+        avg_val_error = val_error / len(val_dataloader)
         
         train_error_list.append(avg_train_error)
-        # val_error_list.append(avg_val_error)
+        val_error_list.append(avg_val_error)
         
-        # wandb.log({
-        #     "epoch": epoch,
-        #     "train_error_epoch": avg_train_error,
-        #     # "val_error_epoch": avg_val_error,   
-        #     "learning_rate_epoch": optimizer.param_groups[0]['lr']
-        # }, step=global_step - 1)
+        wandb.log({
+            "epoch": epoch,
+            "train_error_epoch": avg_train_error,
+            "val_error_epoch": avg_val_error,   
+            "learning_rate_epoch": optimizer.param_groups[0]['lr']
+        }, step=global_step - 1)
         
-        # print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
+        print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
+        
+        if (epoch + 1) % num_save == 0:
+            save_model(model, optimizer, epoch, avg_train_error)
         
         torch.cuda.empty_cache()
         
-    # wandb.finish()
+    wandb.finish()
 
 
 def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, writer, global_step, epoch):
@@ -179,13 +205,13 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
         avg_error_so_far = total_error / step
     
         print(f"Epoch: {epoch} step: {step} | Train Error: {error:3f} | Train Avg Error: {avg_error_so_far:3f}")
-        # wandb.log({
-        #     "train_step_error": error.item(),
-        #     "train_step_avg_error": avg_error_so_far.item(),
-        #     "learning_rate_step": optimizer.param_groups[0]['lr']
-        # }, step=global_step)
+        wandb.log({
+            "train_step_error": error.item(),
+            "train_step_avg_error": avg_error_so_far.item(),
+            "learning_rate_step": optimizer.param_groups[0]['lr']
+        }, step=global_step)
         
-        if global_step % 500 == 0:
+        if global_step % 600 == 0:
             plot_hidden_states_list(hidden_states_list, frames, global_step)
         
         global_step += 1

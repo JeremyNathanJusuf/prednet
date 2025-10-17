@@ -3,11 +3,11 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from utils.mnist import MNISTDataloader, split_mnist_data
+from utils.mnist import MNISTDataloader, split_custom_mnist_data
 from prednet import Prednet
 
 # MNIST Data paths
-MNIST_DATA_DIR = './mnist_data/mnist_test_seq.npy'
+MNIST_DATA_DIR = './custom_dataset/mnist_dataset_4000_5.npy'
 PRED_DIR = './predictions'
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
@@ -22,15 +22,16 @@ batch_size = 1
 # R_filter_sizes = (3, 3, 3, 3)
 nt = 5
 
-n_channels, im_height, im_width = (1, 64, 64)
+n_channels, im_height, im_width = (3, 128, 128)  # RGB images
 input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 24, 48)
+A_stack_sizes = (n_channels, 32, 64, 128, 256)
 R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3)
-Ahat_filter_sizes = (3, 3, 3)
-R_filter_sizes = (3, 3, 3)
+A_filter_sizes = (3, 3, 3, 3)
+Ahat_filter_sizes = (3, 3, 3, 3, 3)
+R_filter_sizes = (3, 3, 3, 3, 3)
 
-model_path = './checkpoints/epoch_58.pth'
+# Update this path to match a checkpoint trained with the debug.py configuration
+model_path = './checkpoints/epoch_58.pth'  # TODO: Update to appropriate checkpoint
 # print(model_path)
 
 def load_model(model, model_path):
@@ -39,8 +40,7 @@ def load_model(model, model_path):
     return model
 
 def evaluate_dataset(data_split):
-    train_path = './mnist_data/mnist_train.npy'
-    val_path = './mnist_data/mnist_val.npy'
+    train_path, val_path = "./mnist_data/mnist_train.npy", "./mnist_data/mnist_val.npy"
     
     # Choose the appropriate data file
     if data_split == 'train':
@@ -55,7 +55,7 @@ def evaluate_dataset(data_split):
         data_path=data_file,
         batch_size=batch_size, 
         num_workers=2
-    ).dataloader()
+    ).dataloader(mnist_dataset_type="custom_mnist")
     
     model = Prednet(
         A_stack_sizes=A_stack_sizes, 
@@ -67,7 +67,7 @@ def evaluate_dataset(data_split):
         lstm_activation='relu', 
         A_activation='relu', 
         extrap_time=None, 
-        output_type='prediction',
+        output_type='error',
         device=device
     )
     model.to(device=device)
@@ -84,11 +84,21 @@ def evaluate_dataset(data_split):
             initial_states = model.get_initial_states(input_shape)
             frames_device = frames.to(device)
             
-            predictions = model(frames_device, initial_states)
+            # Model now outputs (error_list, hidden_states_list) when output_type='error'
+            error_list, hidden_states_list = model(frames_device, initial_states)
             original = frames.squeeze(0).cpu().numpy()  # (nt, c, h, w)
+            
+            # For visualization, we need to get predictions from the hidden states
+            # Extract A_hat (predictions) from hidden states for visualization
+            predictions = []
+            for t in range(len(hidden_states_list)):
+                # hidden_states_list[t] contains states for all layers at time t
+                # A_hat is the prediction at layer 0
+                A_hat = hidden_states_list[t]['A_hat'][0]  # Layer 0 prediction
+                predictions.append(A_hat)
+            
             predicted = torch.stack(predictions).cpu().numpy()  # (nt, batch, c, h, w)
             predicted = predicted.squeeze(1)  # Remove batch dimension: (nt, c, h, w)
-            # print("LOL", predicted.sum(), original.sum())
             
             save_sequence_plot(original, predicted, output_dir, f'{data_split}_{samples_collected + 1}.png')
             samples_collected += 1
@@ -103,20 +113,26 @@ def save_sequence_plot(original, predicted, output_dir, filename):
     fig, axes = plt.subplots(2, nt, figsize=(nt * 2, 4))
     
     for t in range(nt):
-        # Handle grayscale images (1, H, W) -> (H, W)
-        orig_img = original[t, 0, :, :] if original.shape[1] == 1 else original[t].transpose(1, 2, 0)
-        pred_img = predicted[t, 0, :, :] if predicted.shape[1] == 1 else predicted[t].transpose(1, 2, 0)
+        # Handle RGB images (3, H, W) -> (H, W, 3) or grayscale (1, H, W) -> (H, W)
+        if original.shape[1] == 1:  # Grayscale
+            orig_img = original[t, 0, :, :]
+            pred_img = predicted[t, 0, :, :]
+            cmap = 'gray'
+        else:  # RGB
+            orig_img = original[t].transpose(1, 2, 0)
+            pred_img = predicted[t].transpose(1, 2, 0)
+            cmap = None
 
         # Images are already normalized to [0, 1], so just clip
         orig_img = np.clip(orig_img, 0, 1)
         pred_img = np.clip(pred_img, 0, 1)
         
         # Display images directly with [0, 1] range for better contrast
-        axes[0, t].imshow(orig_img, cmap='gray', vmin=0, vmax=1)
+        axes[0, t].imshow(orig_img, cmap=cmap, vmin=0, vmax=1)
         axes[0, t].set_title(f'Original t={t}')
         axes[0, t].axis('off')
         
-        axes[1, t].imshow(pred_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, t].imshow(pred_img, cmap=cmap, vmin=0, vmax=1)
         axes[1, t].set_title(f'Predicted t={t}')
         axes[1, t].axis('off')
     
