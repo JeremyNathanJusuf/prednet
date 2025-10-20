@@ -63,6 +63,16 @@ def split_custom_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
     X = np.load(datapath)  # (batch, nt, channels, h, w)
     batch, total_frames, channels, h, w = X.shape
     
+    parent_dir = os.path.dirname(datapath)
+    train_path = os.path.join(parent_dir, "mnist_train.npy")
+    val_path = os.path.join(parent_dir, "mnist_val.npy")
+
+    if os.path.exists(train_path) and os.path.exists(val_path):
+        print(f"train and val files already exist at {train_path} and {val_path}")
+        train_X = np.load(train_path)
+        val_X = np.load(val_path)
+        return train_path, val_path
+    
     # TODO: revert as this is overfitting with one batchsize of 4
     # print("X.shape", X.shape)
     # subsequences = X[:4, :nt, ...]  # (4, nt, channels, h, w)
@@ -81,11 +91,7 @@ def split_custom_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
         random_state=random_state, 
         shuffle=True
     )
-
-    parent_dir = os.path.dirname(datapath)
-    train_path = os.path.join(parent_dir, "mnist_train.npy")
-    val_path = os.path.join(parent_dir, "mnist_val.npy")
-
+    
     np.save(train_path, train_X)
     np.save(val_path, val_X)
     print(f"train shape: {train_X.shape}, val shape: {val_X.shape}")
@@ -97,7 +103,7 @@ class CustomMNISTDataset(Dataset):
         self, 
         data_path,
     ):
-        self.X = np.load(data_path)  # (batch, nt, channels, h, w)
+        self.X = np.load(data_path) # (batch, nt, channels, h, w)
         
     def preprocess(self, X):
         X = X.astype(np.float32)
@@ -187,7 +193,7 @@ class MNISTDataloader:
             batch_size=self.batch_size, 
             shuffle=True, 
             num_workers=self.num_workers,
-            drop_last=True
+            drop_last=False
         )
         
         return dataloader

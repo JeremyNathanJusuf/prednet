@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-def plot_layer(hidden_states_list, frames, global_step, layer_name, output_dir, batch_idx):
+def plot_layer(hidden_states_list, frames, layer_name, output_dir, batch_idx):
     num_timesteps = len(hidden_states_list)
     num_layers = len(hidden_states_list[0][layer_name])
     
@@ -25,7 +25,7 @@ def plot_layer(hidden_states_list, frames, global_step, layer_name, output_dir, 
     plt.savefig(os.path.join(output_dir, str(batch_idx) ,f'{layer_name}.png'), dpi=150, bbox_inches='tight')
     plt.close()
     
-def plot_input_vs_prediction(hidden_states_list, frames, global_step, output_dir, batch_idx):
+def plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx):
     num_timesteps = len(hidden_states_list)
     fig, axes = plt.subplots(2, num_timesteps, figsize=(num_timesteps * 3, 6))
     
@@ -51,20 +51,20 @@ def plot_input_vs_prediction(hidden_states_list, frames, global_step, output_dir
     plt.savefig(os.path.join(output_dir, str(batch_idx), 'input_vs_prediction.png'), dpi=150, bbox_inches='tight')
     plt.close()
 
-def plot_hidden_states_list(hidden_states_list, frames, global_step):
+def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train'):
     
-    output_dir = f'./debug_layer_images/{global_step}'
+    output_dir = f'./debug_layer_images/{data_split}/{epoch}'
     os.makedirs(output_dir, exist_ok=True)
     
     num_timesteps = len(hidden_states_list)
     num_layers = len(hidden_states_list[0]['R'])
-    
-    for batch_idx in range(max(frames.shape[0], 8)):
+
+    for batch_idx in range(min(frames.shape[0], 5)):
         os.makedirs(os.path.join(output_dir, str(batch_idx)), exist_ok=True)
-        plot_layer(hidden_states_list, frames, global_step, 'R', output_dir, batch_idx)
-        plot_layer(hidden_states_list, frames, global_step, 'A', output_dir, batch_idx)
-        plot_layer(hidden_states_list, frames, global_step, 'Ahat', output_dir, batch_idx)
-        plot_layer(hidden_states_list, frames, global_step, 'E', output_dir, batch_idx)
+        plot_layer(hidden_states_list, frames, 'R', output_dir, batch_idx)
+        plot_layer(hidden_states_list, frames, 'A', output_dir, batch_idx)
+        plot_layer(hidden_states_list, frames, 'Ahat', output_dir, batch_idx)
+        plot_layer(hidden_states_list, frames, 'E', output_dir, batch_idx)
         
-        plot_input_vs_prediction(hidden_states_list, frames, global_step, output_dir, batch_idx)
+        plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx)
     
