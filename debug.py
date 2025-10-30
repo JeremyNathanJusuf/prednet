@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import time
 import logging
 import wandb
+import random
 import matplotlib.pyplot as plt
 
 from utils import EarlyStopping
@@ -23,21 +24,24 @@ if os.path.exists('.env'):
 n_digits = 5
 max_scale = 3
 num_samples = 3840
+min_scale = 2.0
+max_scale = 5.0
+num_dilate_iterations = 2
 
 # Device
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training parameters
-nb_epoch = 1000
+nb_epoch = 3000
 batch_size = 128
 num_workers = 4
 patience = 15
 init_lr = 0.001
-latter_lr = 0.0005  
+latter_lr = 0.0005 
 
 # Model Checkpointing
 num_save = 16
-num_plot = 1
+num_plot = 125
 checkpoint_dir = './checkpoints'
 
 # Model parameters
@@ -55,7 +59,7 @@ time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps e
 time_loss_weights[0] = 0
 
 # LR scheduler
-lr_lambda = lambda epoch: 1.0 if epoch < 750 else (latter_lr / init_lr)
+lr_lambda = lambda epoch: 1.0 if epoch < 2400 else (latter_lr / init_lr)
 
 def save_model(model, optimizer, epoch, avg_train_error):
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -70,12 +74,16 @@ def save_model(model, optimizer, epoch, avg_train_error):
     
     print(f'Saved model to: {model_path}')
 
-def load_model(model, optimizer, model_path):
+def load_model(model, optimizer, lr_scheduler, model_path):
     checkpoint = torch.load(model_path)
+    
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
-    return model, optimizer
+    lr_scheduler.last_epoch = checkpoint["epoch"] - 1
+    lr_scheduler.step()
+    
+    return model, optimizer, lr_scheduler
 
 def debug():
     wandb.init(
@@ -101,7 +109,14 @@ def debug():
     )
     # GENERATE AND SPLIT DATASET
     generator = MovingMnistDatasetGenerator(nt=nt, h=im_height, w=im_width)
-    dataset, dataset_path = generator.generate_dataset(num_samples=num_samples, n_digits=n_digits, max_scale=max_scale)
+    dataset, dataset_path = generator.generate_dataset(
+        num_samples=num_samples, 
+        n_digits=n_digits, 
+        min_scale=min_scale, 
+        max_scale=max_scale, 
+        num_dilate_iterations=num_dilate_iterations,
+    )
+    
     train_path, val_path = split_custom_mnist_data(datapath=dataset_path, nt=nt)
 
     train_dataloader = MNISTDataloader(
@@ -133,16 +148,15 @@ def debug():
     model.to(device=device)
     
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
-    
-    # model, optimizer = load_model(model, optimizer, './checkpoints/epoch_400.pth')
-    
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+    
+    # model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, './checkpoints/epoch_2000.pth')
 
     global_step = 1
-    # global_step = 40001
+    # global_step = 2000*24+1
     
-    # for epoch in range(401, nb_epoch+1):
     for epoch in range(1, nb_epoch+1):
+    # for epoch in range(2001, nb_epoch+1):
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, global_step, epoch)
         
@@ -170,6 +184,8 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
     total_error = 0.0
     print(f'Starting epoch: {epoch}')
     
+    random_plot_step = random.randint(1, len(train_dataloader))
+    
     for step, frames in enumerate(train_dataloader, start=1):
         initial_states = model.get_initial_states(input_shape)
         
@@ -196,7 +212,7 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
             "learning_rate_step": optimizer.param_groups[0]['lr']
         }, step=global_step)
         
-        if epoch % num_plot == 0:
+        if epoch % num_plot == 0 and step == random_plot_step:
             plot_hidden_states_list(hidden_states_list, frames, epoch, 'train')
         
         global_step += 1
@@ -212,6 +228,8 @@ def val_one_epoch(val_dataloader, model, input_shape, global_step, epoch):
     total_error = 0.0
     print('Starting validation')
     
+    random_plot_step = random.randint(1, len(val_dataloader))
+    
     with torch.no_grad(): 
         for step, frames in enumerate(val_dataloader, start=1):
             initial_states = model.get_initial_states(input_shape)
@@ -225,10 +243,11 @@ def val_one_epoch(val_dataloader, model, input_shape, global_step, epoch):
             
             total_error += error
             
-            if epoch % num_plot == 0:
+            if epoch % num_plot == 0 and step == random_plot_step:
                 plot_hidden_states_list(hidden_states_list, frames, epoch, 'val')
             
             del initial_states, output_list, error, hidden_states_list
+            torch.cuda.empty_cache()  # Clear GPU cache
             
     return total_error
 

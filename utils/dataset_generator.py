@@ -18,7 +18,7 @@ class MovingMnistDatasetGenerator():
         frame = self.mnist_dataset[np.random.randint(0, len(self.mnist_dataset))]
         return frame
 
-    def generate_random_video(self, n_digits, max_scale=1.2):
+    def generate_random_video(self, n_digits, min_scale=0.8, max_scale=1.2, num_dilate_iterations=2):
         # generate a random video with n_digits moving in random directions and random colors
         nt = self.nt
         h = self.h
@@ -27,7 +27,7 @@ class MovingMnistDatasetGenerator():
         iou = 1
         coverage = 0
         
-        while iou > 0.2 or coverage < 0.1:
+        while iou > 0.2 or coverage < 0.15:
             iou = 0
             coverage = 0
             
@@ -36,9 +36,24 @@ class MovingMnistDatasetGenerator():
             
             video = np.zeros((nt, 3, h, w))
             directions_with_speed = np.random.randint(-10, 10, size=(n_digits, 2))
-            init_w_arr, init_h_arr = np.random.randint(0, w - original_x_dim, size=(n_digits,)), np.random.randint(0, h - original_y_dim, size=(n_digits,))
+            scales = np.random.uniform(low=min_scale, high=max_scale, size=(n_digits,))
+            init_x_arr, init_y_arr = [], []
+            
+            for i in range(n_digits):
+                # Calculate scaled dimensions
+                x_dim = int(original_x_dim * scales[i])
+                y_dim = int(original_y_dim * scales[i])
+                
+                # Ensure at least 2/3 of digit is within frame (at most 1/3 can be cut off)
+                # x must be in [-x_dim/3, w - 2*x_dim/3] to keep 2/3 visible
+                # y must be in [-y_dim/3, h - 2*y_dim/3] to keep 2/3 visible
+                init_x = int(np.random.uniform(-x_dim/3, w - 2*x_dim/3))
+                init_y = int(np.random.uniform(-y_dim/3, h - 2*y_dim/3))
+                
+                init_x_arr.append(init_x)
+                init_y_arr.append(init_y)
+                
             colors = np.random.rand(n_digits, 3)
-            scales = np.random.uniform(low=1, high=max_scale, size=(n_digits,))
             
             avg_color = np.mean(colors, axis=0)
             if np.mean(avg_color) > 0.05:
@@ -49,17 +64,24 @@ class MovingMnistDatasetGenerator():
             for t in range(nt):
                 frame = np.zeros((3, h, w)) + background_color
                 for i in range(n_digits):
-                    x_, y_  = init_w_arr[i], init_h_arr[i]
+                    x_, y_  = init_x_arr[i], init_y_arr[i]
                     x, y = x_ + t * directions_with_speed[i][0], y_ + t * directions_with_speed[i][1]
+                    
                     x_dim, y_dim = int(original_x_dim * scales[i]), int(original_y_dim * scales[i])
-
+                    assert x_dim > 28 and y_dim > 28, f"bruh {x_dim} {y_dim}"
                     color = np.expand_dims(colors[i], axis=(1, 2))
                         
                     input_digit = np.repeat(digits[i], 3, axis=0)
-                    # Use INTER_NEAREST for crisp, sharp edges (no blur)
-                    input_digit = cv2.resize(input_digit.transpose(1, 2, 0), (x_dim, y_dim), interpolation=cv2.INTER_LANCZOS4).transpose(2, 0, 1)
-                    # Threshold to make edges even sharper
-                    input_digit = np.where(input_digit > 0.5, input_digit, 0)
+                    
+                    # Resize the digit with smooth interpolation for nice edges
+                    input_digit = cv2.resize(input_digit.transpose(1, 2, 0), (x_dim, y_dim), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
+                    
+                    # Dilate the digit
+                    kernel = np.ones((3, 3), np.uint8)
+                    input_digit = cv2.dilate(input_digit, kernel, iterations=num_dilate_iterations)
+                    
+                    # Hard threshold to remove texture while keeping smooth edges
+                    input_digit = np.where(input_digit > 0.1, 1, 0)
 
                     # Calculate the overlapping region between digit and frame
                     # Digit coordinates
@@ -99,7 +121,7 @@ class MovingMnistDatasetGenerator():
             
         return video
         
-    def generate_dataset(self, num_samples, n_digits, max_scale=1.2):
+    def generate_dataset(self, num_samples, n_digits, min_scale=0.8, max_scale=1.2, num_dilate_iterations=2):
         save_path = f'./custom_dataset/mnist_dataset_{num_samples}_{self.nt}.npy'
         if os.path.exists(save_path):
             print(f"dataset already exists at {save_path}")
@@ -107,7 +129,7 @@ class MovingMnistDatasetGenerator():
         
         dataset = []
         for _ in range(num_samples):
-            video = self.generate_random_video(n_digits, max_scale)
+            video = self.generate_random_video(n_digits, min_scale, max_scale, num_dilate_iterations)
             dataset.append(video)
             
         dataset = np.stack(dataset)
