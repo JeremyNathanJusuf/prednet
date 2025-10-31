@@ -117,7 +117,6 @@ class MovingMnistDatasetGenerator():
                     coverage = max(frame_mask.sum() / (h * w), coverage)
 
                 video[t] = frame
-                
             
         return video
         

@@ -22,8 +22,7 @@ if os.path.exists('.env'):
 
 # Dataset parameters
 n_digits = 5
-max_scale = 3
-num_samples = 3840
+num_samples = 20
 min_scale = 2.0
 max_scale = 5.0
 num_dilate_iterations = 2
@@ -33,7 +32,7 @@ device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_availabl
 
 # Training parameters
 nb_epoch = 3000
-batch_size = 128
+batch_size = 4
 num_workers = 4
 patience = 15
 init_lr = 0.001
@@ -41,7 +40,7 @@ latter_lr = 0.0005
 
 # Model Checkpointing
 num_save = 16
-num_plot = 125
+num_plot = 10
 checkpoint_dir = './checkpoints'
 
 # Model parameters
@@ -147,6 +146,8 @@ def debug():
     )
     model.to(device=device)
     
+    early_stopping = EarlyStopping(patience=patience)
+    
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
@@ -176,6 +177,12 @@ def debug():
             save_model(model, optimizer, epoch, avg_train_error)
         
         torch.cuda.empty_cache()
+        
+        early_stopping(val_loss=avg_val_error)
+        
+        if early_stopping.early_stop:
+            print('Early stopping triggered - stopping training')
+            break
         
     wandb.finish()
 
