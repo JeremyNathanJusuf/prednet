@@ -15,7 +15,7 @@ wheels/
 # Folders
 kitti_data
 mnist_data
-checkpoints
+checkpoints*
 runs
 wandb
 error

@@ -201,20 +201,22 @@ class Prednet(nn.Module):
             else:
                 Ahat_list.append(Ahat)
                 
-            # print(Ahat.shape, A.shape)
-            E_pos = self.relu(Ahat - A)
-            E_neg = self.relu(A - Ahat)
+            # Use the correct A tensor for each layer
+            A_current = A_list[l]
+            # print(Ahat.shape, A_current.shape)
+            E_pos = self.relu(Ahat - A_current)
+            E_neg = self.relu(A_current - Ahat)
             E_list.append(torch.cat([E_neg, E_pos], dim=-3))
             
             # TODO: Extract the outputs from certain module and layer
             
             if self.is_not_top_layer(l):
                 # print(l, E_list[l].shape)
-                A = self.conv_layers['A'][2*l](E_list[l])
-                A = self.conv_layers['A'][2*l+1](A)
-                A = self.pool(A)
+                A_next = self.conv_layers['A'][2*l](E_list[l])
+                A_next = self.conv_layers['A'][2*l+1](A_next)
+                A_next = self.pool(A_next)
                 
-                A_list.append(A)
+                A_list.append(A_next)
         
         if self.output_type == 'prediction':
             output = frame_prediction

@@ -31,11 +31,12 @@ class MovingMnistDatasetGenerator():
             iou = 0
             coverage = 0
             
-            digits = [self.get_random_digit() for _ in range(n_digits)]
+            digits = [get_random_digit() for _ in range(n_digits)]
             original_x_dim, original_y_dim = digits[0].shape[1], digits[0].shape[2]
             
             video = np.zeros((nt, 3, h, w))
-            directions_with_speed = np.random.randint(-10, 10, size=(n_digits, 2))
+            # Use -5 to 6 to include both -5 and 5 (numpy excludes upper bound)
+            directions_with_speed = np.random.randint(-5, 6, size=(n_digits, 2))
             scales = np.random.uniform(low=min_scale, high=max_scale, size=(n_digits,))
             init_x_arr, init_y_arr = [], []
             
@@ -55,11 +56,19 @@ class MovingMnistDatasetGenerator():
                 
             colors = np.random.rand(n_digits, 3)
             
-            avg_color = np.mean(colors, axis=0)
-            if np.mean(avg_color) > 0.05:
-                background_color = np.expand_dims(np.random.rand(3) * 0.2, axis=(1, 2))
+            # Calculate average luminance of digit colors using perceptual formula
+            # Luminance = 0.299*R + 0.587*G + 0.114*B
+            digit_luminances = 0.299 * colors[:, 0] + 0.587 * colors[:, 1] + 0.114 * colors[:, 2]
+            avg_luminance = np.mean(digit_luminances)
+            
+            # Choose background with opposite luminance for good contrast
+            # If digits are bright (>0.5), use dark background; if dark, use light background
+            if avg_luminance > 0.5:
+                # Digits are bright, use dark background (0 to 0.25)
+                background_color = np.expand_dims(np.random.rand(3) * 0.25, axis=(1, 2))
             else:
-                background_color = np.expand_dims(0.8 + np.random.rand(3) * 0.2, axis=(1, 2))
+                # Digits are dark, use light background (0.75 to 1.0)
+                background_color = np.expand_dims(0.75 + np.random.rand(3) * 0.25, axis=(1, 2))
             
             for t in range(nt):
                 frame = np.zeros((3, h, w)) + background_color
@@ -68,20 +77,32 @@ class MovingMnistDatasetGenerator():
                     x, y = x_ + t * directions_with_speed[i][0], y_ + t * directions_with_speed[i][1]
                     
                     x_dim, y_dim = int(original_x_dim * scales[i]), int(original_y_dim * scales[i])
-                    assert x_dim > 28 and y_dim > 28, f"bruh {x_dim} {y_dim}"
                     color = np.expand_dims(colors[i], axis=(1, 2))
                         
                     input_digit = np.repeat(digits[i], 3, axis=0)
                     
-                    # Resize the digit with smooth interpolation for nice edges
-                    input_digit = cv2.resize(input_digit.transpose(1, 2, 0), (x_dim, y_dim), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
+                    # STEP 1: Use LANCZOS4 interpolation for best quality upscaling
+                    input_digit = cv2.resize(input_digit.transpose(1, 2, 0), (x_dim, y_dim), 
+                                            interpolation=cv2.INTER_LANCZOS4).transpose(2, 0, 1)
                     
-                    # Dilate the digit
-                    kernel = np.ones((3, 3), np.uint8)
-                    input_digit = cv2.dilate(input_digit, kernel, iterations=num_dilate_iterations)
+                    # STEP 2: Apply Gaussian blur for anti-aliasing and smooth edges
+                    # Kernel size proportional to scale for consistent smoothness
+                    blur_kernel = max(3, int(scales[i] * 1.5) | 1)  # Ensure odd number
+                    input_digit = cv2.GaussianBlur(input_digit.transpose(1, 2, 0), 
+                                                (blur_kernel, blur_kernel), 0).transpose(2, 0, 1)
                     
-                    # Hard threshold to remove texture while keeping smooth edges
-                    input_digit = np.where(input_digit > 0.1, 1, 0)
+                    # STEP 3: Optional dilation with elliptical kernel (smoother than square)
+                    if num_dilate_iterations > 0:
+                        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                        input_digit = cv2.morphologyEx(input_digit.transpose(1, 2, 0), 
+                                                    cv2.MORPH_DILATE, kernel, 
+                                                    iterations=num_dilate_iterations).transpose(2, 0, 1)
+                    
+                    # STEP 4: Soft threshold with smooth sigmoid transition instead of hard cutoff
+                    # This maintains the anti-aliased edges from interpolation
+                    threshold = 0.1
+                    transition_width = 0.08
+                    input_digit = 1 / (1 + np.exp(-(input_digit - threshold) / transition_width * 10))
 
                     # Calculate the overlapping region between digit and frame
                     # Digit coordinates
@@ -105,10 +126,17 @@ class MovingMnistDatasetGenerator():
                     # Extract the visible part of the digit
                     visible_digit = input_digit[:, digit_y_start:digit_y_end, digit_x_start:digit_x_end]
                     
+                    # Use visible_digit as alpha mask - digits now layer on top instead of blending
                     frame_mask = (frame[:, frame_y_start:frame_y_end, frame_x_start:frame_x_end] > background_color + 0.01)
-                    frame[:, frame_y_start:frame_y_end, frame_x_start:frame_x_end] = np.clip(
-                        frame[:, frame_y_start:frame_y_end, frame_x_start:frame_x_end] + visible_digit * color, 0, 1)
-                    digit_mask = visible_digit > 0
+                    
+                    # Alpha compositing: where digit is visible, show digit color; otherwise keep background
+                    digit_alpha = visible_digit  # Smooth alpha from 0 to 1
+                    current_frame_region = frame[:, frame_y_start:frame_y_end, frame_x_start:frame_x_end]
+                    frame[:, frame_y_start:frame_y_end, frame_x_start:frame_x_end] = (
+                        digit_alpha * color + (1 - digit_alpha) * current_frame_region
+                    )
+                    
+                    digit_mask = visible_digit > 0.1  # Adjusted threshold for soft edges
                     
                     intersection = (frame_mask & digit_mask).sum()
                     union = (frame_mask | digit_mask).sum()
@@ -117,6 +145,7 @@ class MovingMnistDatasetGenerator():
                     coverage = max(frame_mask.sum() / (h * w), coverage)
 
                 video[t] = frame
+                
             
         return video
         

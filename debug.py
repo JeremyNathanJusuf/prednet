@@ -21,30 +21,30 @@ if os.path.exists('.env'):
     wandb_key = os.getenv("WANDB_API_KEY")
 
 # Dataset parameters
-n_digits = 5
-num_samples = 20
-min_scale = 2.0
-max_scale = 5.0
-num_dilate_iterations = 2
+n_digits = 3
+num_samples = 3840
+min_scale = 1.0
+max_scale = 2.3
+num_dilate_iterations = 1
 
 # Device
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training parameters
-nb_epoch = 3000
-batch_size = 4
+nb_epoch = 2000
+batch_size = 32
 num_workers = 4
 patience = 15
-init_lr = 0.001
+init_lr = 6e-4
 latter_lr = 0.0005 
 
 # Model Checkpointing
-num_save = 16
-num_plot = 10
+num_save = 50
+num_plot = 25
 checkpoint_dir = './checkpoints'
 
 # Model parameters
-n_channels, im_height, im_width = (3, 128, 128)  # KITTI RGB images
+n_channels, im_height, im_width = (3, 64, 64)  # KITTI RGB images
 input_shape = (batch_size, n_channels, im_height, im_width)
 A_stack_sizes = (n_channels, 32, 64, 128, 256)  # Adapted for KITTI
 R_stack_sizes = A_stack_sizes
@@ -57,21 +57,44 @@ nt = 8  # number of timesteps used for sequences in training
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
 time_loss_weights[0] = 0
 
-# LR scheduler
-lr_lambda = lambda epoch: 1.0 if epoch < 2400 else (latter_lr / init_lr)
+# # LR scheduler
+# lr_lambda = lambda epoch: 1.0 if epoch < 4000 else (latter_lr / init_lr)
+# LR scheduler parameters
+lr_scheduler_factor = 0.5  # Factor by which to reduce LR
+lr_scheduler_patience = 5  # Number of epochs with no improvement after which LR will be reduced
+lr_scheduler_min_lr = 1e-6  # Minimum learning rate
 
-def save_model(model, optimizer, epoch, avg_train_error):
+def save_model(model, optimizer, epoch, avg_train_error, avg_val_error=None):
     os.makedirs(checkpoint_dir, exist_ok=True)
     model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}.pth')
+    
+    checkpoint_data = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'avg_train_error': avg_train_error,
+    }
+    
+    if avg_val_error is not None:
+        checkpoint_data['avg_val_error'] = avg_val_error
+    
+    torch.save(checkpoint_data, model_path)
+    
+    print(f'Saved model to: {model_path}')
+
+def save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error):
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    model_path = os.path.join(checkpoint_dir, 'epoch_best_val.pth')
     
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'avg_train_error': avg_train_error,
+        'avg_val_error': avg_val_error,
     }, model_path)
     
-    print(f'Saved model to: {model_path}')
+    print(f'Saved best validation model to: {model_path} (epoch {epoch}, val_error: {avg_val_error:.6f})')
 
 def load_model(model, optimizer, lr_scheduler, model_path):
     checkpoint = torch.load(model_path)
@@ -79,8 +102,11 @@ def load_model(model, optimizer, lr_scheduler, model_path):
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
-    lr_scheduler.last_epoch = checkpoint["epoch"] - 1
-    lr_scheduler.step()
+    # ReduceLROnPlateau doesn't have last_epoch attribute like other schedulers
+    # It tracks metrics internally, so we don't need to manually step it
+    if hasattr(lr_scheduler, 'last_epoch'):
+        lr_scheduler.last_epoch = checkpoint["epoch"] - 1
+        lr_scheduler.step()
     
     return model, optimizer, lr_scheduler
 
@@ -149,12 +175,21 @@ def debug():
     early_stopping = EarlyStopping(patience=patience)
     
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
-    lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min',
+        factor=lr_scheduler_factor,
+        patience=lr_scheduler_patience,
+        min_lr=lr_scheduler_min_lr,
+        verbose=True
+    )
     
-    # model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, './checkpoints/epoch_2000.pth')
+    # model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, './checkpoints/epoch_300.pth')
 
     global_step = 1
-    # global_step = 2000*24+1
+    # global_step = 300*24+1
+    
+    best_val_error = float('inf')
     
     for epoch in range(1, nb_epoch+1):
     # for epoch in range(2001, nb_epoch+1):
@@ -164,20 +199,31 @@ def debug():
         avg_train_error = train_error / len(train_dataloader) # average of cumulative error
         avg_val_error = val_error / len(val_dataloader) # average of cumulative error
         
+        # Save best validation model
+        if avg_val_error < best_val_error:
+            best_val_error = avg_val_error
+            save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error)
+        
         wandb.log({
             "epoch": epoch,
             "train_error_epoch": avg_train_error,
-            "val_error_epoch": avg_val_error,   
+            "val_error_epoch": avg_val_error,
+            "best_val_error": best_val_error,
             "learning_rate_epoch": optimizer.param_groups[0]['lr']
         }, step=global_step - 1)
         
         print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
         
+        # Save model every num_save epochs or at the end
         if epoch % num_save == 0 or epoch == nb_epoch:
-            save_model(model, optimizer, epoch, avg_train_error)
+            save_model(model, optimizer, epoch, avg_train_error, avg_val_error)
+        
+        # Step the learning rate scheduler with validation error
+        lr_scheduler.step(avg_val_error)
         
         torch.cuda.empty_cache()
         
+        # TODO: Uncomment this when we want to use early stopping
         early_stopping(val_loss=avg_val_error)
         
         if early_stopping.early_stop:
@@ -192,8 +238,9 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
     print(f'Starting epoch: {epoch}')
     
     random_plot_step = random.randint(1, len(train_dataloader))
-    
+
     for step, frames in enumerate(train_dataloader, start=1):
+        print("debug", frames.shape)
         initial_states = model.get_initial_states(input_shape)
         
         output_list, hidden_states_list = model(frames.to(device), initial_states)
@@ -227,7 +274,6 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
         del initial_states, output_list, error, hidden_states_list
         torch.cuda.empty_cache()  # Clear GPU cache
         
-    lr_scheduler.step()
     return total_error, global_step
 
 
