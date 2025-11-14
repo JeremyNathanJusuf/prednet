@@ -31,7 +31,7 @@ class MovingMnistDatasetGenerator():
             iou = 0
             coverage = 0
             
-            digits = [get_random_digit() for _ in range(n_digits)]
+            digits = [self.get_random_digit() for _ in range(n_digits)]
             original_x_dim, original_y_dim = digits[0].shape[1], digits[0].shape[2]
             
             video = np.zeros((nt, 3, h, w))
@@ -55,21 +55,13 @@ class MovingMnistDatasetGenerator():
                 init_y_arr.append(init_y)
                 
             colors = np.random.rand(n_digits, 3)
-            
-            # Calculate average luminance of digit colors using perceptual formula
-            # Luminance = 0.299*R + 0.587*G + 0.114*B
-            digit_luminances = 0.299 * colors[:, 0] + 0.587 * colors[:, 1] + 0.114 * colors[:, 2]
-            avg_luminance = np.mean(digit_luminances)
-            
-            # Choose background with opposite luminance for good contrast
-            # If digits are bright (>0.5), use dark background; if dark, use light background
-            if avg_luminance > 0.5:
-                # Digits are bright, use dark background (0 to 0.25)
-                background_color = np.expand_dims(np.random.rand(3) * 0.25, axis=(1, 2))
+                
+            avg_color = np.mean(colors, axis=0)
+            if np.mean(avg_color) > 0.05:
+                background_color = np.expand_dims(np.random.rand(3) * 0.2, axis=(1, 2))
             else:
-                # Digits are dark, use light background (0.75 to 1.0)
-                background_color = np.expand_dims(0.75 + np.random.rand(3) * 0.25, axis=(1, 2))
-            
+                background_color = np.expand_dims(0.8 + np.random.rand(3) * 0.2, axis=(1, 2))
+                    
             for t in range(nt):
                 frame = np.zeros((3, h, w)) + background_color
                 for i in range(n_digits):
@@ -148,7 +140,7 @@ class MovingMnistDatasetGenerator():
                 
             
         return video
-        
+            
     def generate_dataset(self, num_samples, n_digits, min_scale=0.8, max_scale=1.2, num_dilate_iterations=2):
         save_path = f'./custom_dataset/mnist_dataset_{num_samples}_{self.nt}.npy'
         if os.path.exists(save_path):

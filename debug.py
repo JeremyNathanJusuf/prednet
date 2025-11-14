@@ -31,15 +31,15 @@ num_dilate_iterations = 1
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training parameters
-nb_epoch = 2000
-batch_size = 32
+nb_epoch = 1000
+batch_size = 8
 num_workers = 4
-patience = 15
+patience = 150
 init_lr = 6e-4
-latter_lr = 0.0005 
+latter_lr = 5e-4
 
 # Model Checkpointing
-num_save = 50
+num_save = 100
 num_plot = 25
 checkpoint_dir = './checkpoints'
 
@@ -58,11 +58,11 @@ time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps e
 time_loss_weights[0] = 0
 
 # # LR scheduler
-# lr_lambda = lambda epoch: 1.0 if epoch < 4000 else (latter_lr / init_lr)
+lr_lambda = lambda epoch: 1.0 if epoch < 4000 else (latter_lr / init_lr)
 # LR scheduler parameters
-lr_scheduler_factor = 0.5  # Factor by which to reduce LR
-lr_scheduler_patience = 5  # Number of epochs with no improvement after which LR will be reduced
-lr_scheduler_min_lr = 1e-6  # Minimum learning rate
+# lr_scheduler_factor = 0.5  # Factor by which to reduce LR
+# lr_scheduler_patience = 5  # Number of epochs with no improvement after which LR will be reduced
+# lr_scheduler_min_lr = 1e-6  # Minimum learning rate
 
 def save_model(model, optimizer, epoch, avg_train_error, avg_val_error=None):
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -172,27 +172,28 @@ def debug():
     )
     model.to(device=device)
     
-    early_stopping = EarlyStopping(patience=patience)
+    # early_stopping = EarlyStopping(patience=patience)
     
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode='min',
-        factor=lr_scheduler_factor,
-        patience=lr_scheduler_patience,
-        min_lr=lr_scheduler_min_lr,
-        verbose=True
-    )
+    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, 
+    #     mode='min',
+    #     factor=lr_scheduler_factor,
+    #     patience=lr_scheduler_patience,
+    #     min_lr=lr_scheduler_min_lr
+    # )
+    
+    lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     # model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, './checkpoints/epoch_300.pth')
 
     global_step = 1
-    # global_step = 300*24+1
+    # global_step = 300*96+1
     
     best_val_error = float('inf')
     
     for epoch in range(1, nb_epoch+1):
-    # for epoch in range(2001, nb_epoch+1):
+    # for epoch in range(301, nb_epoch+1):
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, global_step, epoch)
         
@@ -212,23 +213,25 @@ def debug():
             "learning_rate_epoch": optimizer.param_groups[0]['lr']
         }, step=global_step - 1)
         
-        print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f}')
+        print(f'Epoch: {epoch} global step: {global_step - 1} | Train Error: {avg_train_error:3f} | Val Error: {avg_val_error:3f} | Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
         
         # Save model every num_save epochs or at the end
         if epoch % num_save == 0 or epoch == nb_epoch:
             save_model(model, optimizer, epoch, avg_train_error, avg_val_error)
         
         # Step the learning rate scheduler with validation error
-        lr_scheduler.step(avg_val_error)
+        # lr_scheduler.step(avg_val_error)
+        
+        lr_scheduler.step()
         
         torch.cuda.empty_cache()
         
         # TODO: Uncomment this when we want to use early stopping
-        early_stopping(val_loss=avg_val_error)
+        # early_stopping(val_loss=avg_val_error)
         
-        if early_stopping.early_stop:
-            print('Early stopping triggered - stopping training')
-            break
+        # if early_stopping.early_stop:
+        #     print('Early stopping triggered - stopping training')
+        #     break
         
     wandb.finish()
 
