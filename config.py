@@ -9,6 +9,13 @@ import torch
 # Device
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
+# Training name
+training_suffix = '15_nov_1_finetune_l0'
+
+# Directory paths with training suffix
+checkpoint_dir = f'./checkpoints_{training_suffix}'
+debug_images_dir = f'./debug_layer_images_{training_suffix}'
+
 # Dataset parameters
 n_digits = 3
 num_samples = 3840
@@ -31,7 +38,6 @@ latter_lr = 5e-4
 # Model Checkpointing
 num_save = 100
 num_plot = 25
-checkpoint_dir = './checkpoints'
 
 # Model parameters
 n_channels, im_height, im_width = (3, 64, 64)  # RGB images
@@ -71,5 +77,6 @@ model_path = './checkpoints_14_nov_1/epoch_100.pth'  # Default model checkpoint 
 # Finetuning
 is_finetuning = True
 extrap_time = 4
-model_checkpoint_path = './checkpoints_14_nov_1/epoch_100.pth'  
+model_checkpoint_path = './checkpoints_14_nov_1/epoch_100.pth'  # Path to checkpoint for finetuning  
+
 

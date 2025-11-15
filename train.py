@@ -39,6 +39,7 @@ latter_lr = config.latter_lr
 num_save = config.num_save
 num_plot = config.num_plot
 checkpoint_dir = config.checkpoint_dir
+debug_images_dir = config.debug_images_dir
 
 n_channels = config.n_channels
 im_height = config.im_height
@@ -273,7 +274,7 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
         }, step=global_step)
         
         if epoch % num_plot == 0 and step == random_plot_step:
-            plot_hidden_states_list(hidden_states_list, frames, epoch, 'train')
+            plot_hidden_states_list(hidden_states_list, frames, epoch, 'train', debug_images_dir)
         
         global_step += 1
         
@@ -303,7 +304,7 @@ def val_one_epoch(val_dataloader, model, input_shape, global_step, epoch):
             total_error += error
             
             if epoch % num_plot == 0 and step == random_plot_step:
-                plot_hidden_states_list(hidden_states_list, frames, epoch, 'val')
+                plot_hidden_states_list(hidden_states_list, frames, epoch, 'val', debug_images_dir)
             
             del initial_states, output_list, error, hidden_states_list
             torch.cuda.empty_cache()  # Clear GPU cache

@@ -32,6 +32,7 @@ lstm_activation = config.lstm_activation
 A_activation = config.A_activation
 
 model_path = config.model_path
+debug_images_dir = config.debug_images_dir
 
 def load_model(model, model_path):
     checkpoint = torch.load(model_path, map_location=device)
@@ -80,7 +81,7 @@ def evaluate_dataset_with_extrapolation(data_split):
             if step > 3: break
             initial_states = model.get_initial_states(input_shape)
             output_list, hidden_states_list = model(frames.to(device), initial_states)
-            plot_hidden_states_list(hidden_states_list, frames, step, 'prediction')
+            plot_hidden_states_list(hidden_states_list, frames, step, 'prediction', debug_images_dir)
             del initial_states, output_list, hidden_states_list
             
 

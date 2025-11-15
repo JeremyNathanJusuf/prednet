@@ -51,9 +51,9 @@ def plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx):
     plt.savefig(os.path.join(output_dir, str(batch_idx), 'input_vs_prediction.png'), dpi=150, bbox_inches='tight')
     plt.close()
 
-def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train'):
+def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train', debug_images_dir='./debug_layer_images'):
     
-    output_dir = f'./debug_layer_images/{data_split}/{epoch}'
+    output_dir = f'{debug_images_dir}/{data_split}/{epoch}'
     os.makedirs(output_dir, exist_ok=True)
     
     num_timesteps = len(hidden_states_list)
