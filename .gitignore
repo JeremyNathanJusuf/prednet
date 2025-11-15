@@ -24,8 +24,9 @@ predictions
 debug_*
 data
 custom_dataset
+eval_results
 # Files
-test.ipynb
+test*.ipynb
 train_backup.py
 training.log
 train.sh

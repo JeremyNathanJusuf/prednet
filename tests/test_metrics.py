@@ -7,7 +7,7 @@ def test_mse():
     pred[5:,...] = 0.0
     gt = np.zeros((10, 9, 3, 128, 128))
     
-    mse = _calculate_mse(pred, gt)
+    mse = _calculate_mse(pred, gt, 1, 4)
     print("mse", mse)
     assert abs(mse - 0.5) < 1e-6
     print("test mse successful")

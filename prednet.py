@@ -137,7 +137,7 @@ class Prednet(nn.Module):
         if self.extrap_time:
             with torch.no_grad():
                 states['frame_prediction'] = torch.zeros(input_shape, device=self.device, dtype=torch.float32)
-                states['timestep'] = 1
+                states['timestep'] = 0
             
         return states
         
