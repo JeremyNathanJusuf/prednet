@@ -29,6 +29,6 @@ test.ipynb
 train_backup.py
 training.log
 train.sh
-eval.sh
+evaluate.sh
 run_python*
 run.py
