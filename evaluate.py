@@ -10,22 +10,28 @@ import cv2
 import torch
 from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
 import pandas as pd
+import config
 
-device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
+# Import parameters from config
+device = config.device
+n_samples = config.n_samples_eval
+batch_size = config.batch_size
+nt = config.nt
 
-n_samples = 10
-batch_size = 8
-nt = 8
+n_channels = config.n_channels
+im_height = config.im_height
+im_width = config.im_width
+input_shape = config.input_shape
+A_stack_sizes = config.A_stack_sizes
+R_stack_sizes = config.R_stack_sizes
+A_filter_sizes = config.A_filter_sizes
+Ahat_filter_sizes = config.Ahat_filter_sizes
+R_filter_sizes = config.R_filter_sizes
+pixel_max = config.pixel_max
+lstm_activation = config.lstm_activation
+A_activation = config.A_activation
 
-n_channels, im_height, im_width = (3, 64, 64)  # RGB images
-input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 32, 64, 128, 256)
-R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3, 3)
-
-model_path = './checkpoints_14_nov_1/epoch_100.pth'  # TODO: Update to appropriate checkpoint
+model_path = config.model_path
 
 def load_model(model, model_path):
     checkpoint = torch.load(model_path, map_location=device)
@@ -33,13 +39,11 @@ def load_model(model, model_path):
     return model
 
 def get_model_and_dataloader(data_split, output_type='error', extrap_time=None):
-    train_path, val_path = "./custom_dataset/mnist_train.npy", "./custom_dataset/mnist_val.npy"
-    
     # Choose the appropriate data file
     if data_split == 'train':
-        data_file = train_path
+        data_file = config.train_path
     else:
-        data_file = val_path
+        data_file = config.val_path
 
     dataloader = MNISTDataloader(
         data_path=data_file,
@@ -53,9 +57,9 @@ def get_model_and_dataloader(data_split, output_type='error', extrap_time=None):
         A_filter_sizes=A_filter_sizes, 
         R_filter_sizes=R_filter_sizes, 
         Ahat_filter_sizes=Ahat_filter_sizes,
-        pixel_max=1.0,
-        lstm_activation='relu', 
-        A_activation='relu', 
+        pixel_max=pixel_max,
+        lstm_activation=lstm_activation, 
+        A_activation=A_activation, 
         extrap_time=extrap_time, 
         output_type=output_type,
         device=device
@@ -66,7 +70,7 @@ def get_model_and_dataloader(data_split, output_type='error', extrap_time=None):
     
     return model, dataloader
 
-def evaluate_dataset(data_split):
+def evaluate_dataset_with_extrapolation(data_split):
     model, dataloader = get_model_and_dataloader(data_split, output_type='error', extrap_time=4)
     
     samples_collected = 0
@@ -368,20 +372,3 @@ def capture_results_for_configs():
 if __name__ == '__main__':
     # Run all configured experiments and get results as DataFrame
     df = capture_results_for_configs()
-    
-    # Optionally save to CSV
-    # df.to_csv('results.csv', index=False)
-    
-    # Individual experiment example:
-    # data_split = 'val'
-    # extrap_time = 4
-    # start_frame_idx = 4
-    # end_frame_idx = 7
-    # 
-    # mse_value, psnr_value, ssim_value, l1_value = calculate_naive_prev_frame_metrics(data_split, start_frame_idx, end_frame_idx)
-    # mse_value, psnr_value, ssim_value, l1_value = calculate_optical_flow_metrics(data_split, start_frame_idx, end_frame_idx)
-    # mse_value, psnr_value, ssim_value, l1_value = calculate_model_metrics(data_split, start_frame_idx, end_frame_idx, extrap_time)
-    # mse_value, psnr_value, ssim_value, l1_value = calculate_model_metrics(data_split, start_frame_idx, end_frame_idx, None)
-    
-    # evaluate_dataset('val')
-    

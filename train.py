@@ -15,50 +15,53 @@ from prednet import Prednet
 from utils.mnist import MNISTDataloader, split_custom_mnist_data
 from utils.plot import plot_hidden_states_list
 from utils.dataset_generator import MovingMnistDatasetGenerator
+import config
 
 if os.path.exists('.env'):
     load_dotenv()
     wandb_key = os.getenv("WANDB_API_KEY")
 
-# Dataset parameters
-n_digits = 3
-num_samples = 3840
-min_scale = 1.0
-max_scale = 2.3
-num_dilate_iterations = 1
+# Import parameters from config
+device = config.device
+n_digits = config.n_digits
+num_samples = config.num_samples
+min_scale = config.min_scale
+max_scale = config.max_scale
+num_dilate_iterations = config.num_dilate_iterations
 
-# Device
-device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
+nb_epoch = config.nb_epoch
+batch_size = config.batch_size
+num_workers = config.num_workers
+patience = config.patience
+init_lr = config.init_lr
+latter_lr = config.latter_lr
 
-# Training parameters
-nb_epoch = 1000
-batch_size = 8
-num_workers = 4
-patience = 150
-init_lr = 6e-4
-latter_lr = 5e-4
+num_save = config.num_save
+num_plot = config.num_plot
+checkpoint_dir = config.checkpoint_dir
 
-# Model Checkpointing
-num_save = 100
-num_plot = 25
-checkpoint_dir = './checkpoints'
+n_channels = config.n_channels
+im_height = config.im_height
+im_width = config.im_width
+input_shape = config.input_shape
+A_stack_sizes = config.A_stack_sizes
+R_stack_sizes = config.R_stack_sizes
+A_filter_sizes = config.A_filter_sizes
+Ahat_filter_sizes = config.Ahat_filter_sizes
+R_filter_sizes = config.R_filter_sizes
+nt = config.nt
+pixel_max = config.pixel_max
+lstm_activation = config.lstm_activation
+A_activation = config.A_activation
 
-# Model parameters
-n_channels, im_height, im_width = (3, 64, 64)  # KITTI RGB images
-input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 32, 64, 128, 256)  # Adapted for KITTI
-R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3, 3)
-layer_loss_weights = np.array([1., .1, .1, .1, .1]) # weighting for each layer in final loss; "L_0" model:  [1, 0, 0, 0], "L_all": [1, 0.1, 0.1, 0.1]
-layer_loss_weights = torch.tensor(np.expand_dims(layer_loss_weights, 1), device=device, dtype=torch.float32)
-nt = 8  # number of timesteps used for sequences in training
-time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
-time_loss_weights[0] = 0
+is_finetuning = config.is_finetuning
+extrap_time = config.extrap_time
 
-# # LR scheduler
-lr_lambda = lambda epoch: 1.0 if epoch < 4000 else (latter_lr / init_lr)
+layer_loss_weights = config.get_layer_loss_weights(device)
+time_loss_weights = config.time_loss_weights
+model_checkpoint_path = config.model_checkpoint_path
+
+lr_lambda = config.get_lr_lambda(init_lr, latter_lr)
 # LR scheduler parameters
 # lr_scheduler_factor = 0.5  # Factor by which to reduce LR
 # lr_scheduler_patience = 5  # Number of epochs with no improvement after which LR will be reduced
@@ -110,7 +113,7 @@ def load_model(model, optimizer, lr_scheduler, model_path):
     
     return model, optimizer, lr_scheduler
 
-def debug():
+def train():
     wandb.init(
         project="prednet-mnist",
         name=f"prednet_debug",
@@ -163,16 +166,16 @@ def debug():
         A_filter_sizes=A_filter_sizes, 
         R_filter_sizes=R_filter_sizes, 
         Ahat_filter_sizes=Ahat_filter_sizes,
-        pixel_max=1.0,
-        lstm_activation='relu', 
-        A_activation='relu', 
-        extrap_time=None, 
+        pixel_max=pixel_max,
+        lstm_activation=lstm_activation, 
+        A_activation=A_activation, 
+        extrap_time=extrap_time, 
         output_type='error',
         device=device
     )
     model.to(device=device)
     
-    # early_stopping = EarlyStopping(patience=patience)
+    early_stopping = EarlyStopping(patience=patience)
     
     optimizer = optim.Adam(model.parameters(), lr=init_lr)
     # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -185,7 +188,8 @@ def debug():
     
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
-    # model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, './checkpoints/epoch_300.pth')
+    if is_finetuning:
+        model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, model_checkpoint_path)
 
     global_step = 1
     # global_step = 300*96+1
@@ -227,11 +231,11 @@ def debug():
         torch.cuda.empty_cache()
         
         # TODO: Uncomment this when we want to use early stopping
-        # early_stopping(val_loss=avg_val_error)
+        early_stopping(val_loss=avg_val_error)
         
-        # if early_stopping.early_stop:
-        #     print('Early stopping triggered - stopping training')
-        #     break
+        if early_stopping.early_stop:
+            print('Early stopping triggered - stopping training')
+            break
         
     wandb.finish()
 
@@ -308,4 +312,4 @@ def val_one_epoch(val_dataloader, model, input_shape, global_step, epoch):
 
 
 if __name__ == '__main__':
-    debug()
+    train()
