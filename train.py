@@ -14,7 +14,7 @@ from utils import EarlyStopping
 from prednet import Prednet
 from utils.mnist import MNISTDataloader, split_custom_mnist_data
 from utils.plot import plot_hidden_states_list
-from utils.dataset_generator import MovingMnistDatasetGenerator
+from utils.dataset_generator import GrayscaleMovingMnistGenerator
 import config
 
 if os.path.exists('.env'):
@@ -100,17 +100,35 @@ def save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error)
     
     print(f'Saved best validation model to: {model_path} (epoch {epoch}, val_error: {avg_val_error:.6f})')
 
-def load_model(model, optimizer, lr_scheduler, model_path):
-    checkpoint = torch.load(model_path)
+def load_model(model, optimizer, lr_scheduler, model_path, load_optimizer=True):
+    """
+    Load model weights from checkpoint.
+    
+    Args:
+        model: The model to load weights into
+        optimizer: The optimizer
+        lr_scheduler: The learning rate scheduler
+        model_path: Path to the checkpoint file
+        load_optimizer: If True, load optimizer and scheduler state. 
+                       If False, only load model weights (useful for finetuning from pretrained)
+    
+    Returns:
+        model, optimizer, lr_scheduler
+    """
+    checkpoint = torch.load(model_path, map_location=device)
     
     model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
-    # ReduceLROnPlateau doesn't have last_epoch attribute like other schedulers
-    # It tracks metrics internally, so we don't need to manually step it
-    if hasattr(lr_scheduler, 'last_epoch'):
-        lr_scheduler.last_epoch = checkpoint["epoch"] - 1
-        lr_scheduler.step()
+    if load_optimizer and 'optimizer_state_dict' in checkpoint:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # ReduceLROnPlateau doesn't have last_epoch attribute like other schedulers
+        # It tracks metrics internally, so we don't need to manually step it
+        if hasattr(lr_scheduler, 'last_epoch'):
+            lr_scheduler.last_epoch = checkpoint["epoch"] - 1
+            lr_scheduler.step()
+    else:
+        print(f"Loading model weights only (not optimizer state) from {model_path}")
     
     return model, optimizer, lr_scheduler
 
@@ -136,14 +154,13 @@ def train():
             "device": device
         }
     )
-    # GENERATE AND SPLIT DATASET
-    generator = MovingMnistDatasetGenerator(nt=nt, h=im_height, w=im_width)
+    # GENERATE AND SPLIT DATASET (using grayscale generator)
+    generator = GrayscaleMovingMnistGenerator(nt=nt, h=im_height, w=im_width)
     dataset, dataset_path = generator.generate_dataset(
         num_samples=num_samples, 
         n_digits=n_digits, 
         min_scale=min_scale, 
-        max_scale=max_scale, 
-        num_dilate_iterations=num_dilate_iterations,
+        max_scale=max_scale,
     )
     
     train_path, val_path = split_custom_mnist_data(datapath=dataset_path, nt=nt)
@@ -190,7 +207,8 @@ def train():
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     if is_finetuning:
-        model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, model_checkpoint_path)
+        # load_optimizer=False to start fresh optimizer when finetuning on new data
+        model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, model_checkpoint_path, load_optimizer=False)
 
     global_step = 1
     # global_step = 300*96+1

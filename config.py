@@ -40,7 +40,7 @@ num_save = 100
 num_plot = 25
 
 # Model parameters
-n_channels, im_height, im_width = (3, 64, 64)  # RGB images
+n_channels, im_height, im_width = (3, 128, 160)  # RGB images (128x160 for moving MNIST)
 input_shape = (batch_size, n_channels, im_height, im_width)
 A_stack_sizes = (n_channels, 32, 64, 128, 256)
 R_stack_sizes = A_stack_sizes
@@ -72,7 +72,7 @@ def get_lr_lambda(init_lr, latter_lr):
 
 # Evaluation parameters
 n_samples_eval = 10
-model_path = './checkpoints_14_nov_1/epoch_100.pth'  # Default model checkpoint path
+model_path = './checkpoints_15_nov_1_finetune_l0/epoch_best_val.pth'  # Default model checkpoint path
 
 # Finetuning
 is_finetuning = True

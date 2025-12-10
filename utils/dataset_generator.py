@@ -4,6 +4,151 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import os
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+from utils.mnist import split_custom_mnist_data
+
+
+class GrayscaleMovingMnistGenerator:
+    """
+    Simple grayscale Moving MNIST generator that preserves original digit textures.
+    - Single channel (grayscale)
+    - Original MNIST texture preserved (not solid colors)
+    - Simple compositing: digits overlay on black background
+    - Output shape: (nt, 1, h, w)
+    - Digits are dispersed across the frame (not clustered)
+    """
+    
+    def __init__(self, nt, h, w):
+        # Load the MNIST dataset
+        mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transforms.ToTensor())
+        self.mnist_dataset = [img.numpy().squeeze() for img, _ in mnist_dataset]  # Store as 2D arrays
+        self.nt = nt
+        self.h = h
+        self.w = w
+    
+    def generate_random_video(self, n_digits, min_scale=1.0, max_scale=2.0):
+        """
+        Generate a grayscale moving MNIST video with dispersed digits.
+        
+        Args:
+            n_digits: Number of digits in the video
+            min_scale, max_scale: Scale range for digits
+        
+        Returns:
+            video: numpy array of shape (nt, 1, h, w)
+        """
+        nt, h, w = self.nt, self.h, self.w
+        
+        digits = [self.mnist_dataset[np.random.randint(0, len(self.mnist_dataset))] for _ in range(n_digits)]
+        original_size = 28  # MNIST digits are 28x28
+        
+        # Random scales and velocities
+        scales = np.random.uniform(min_scale, max_scale, size=n_digits)
+        velocities = np.random.randint(-4, 5, size=(n_digits, 2))  # (vx, vy) for each digit
+        
+        # Initial positions with mild dispersion (not too clustered, not too sparse)
+        positions = []
+        min_distance = 15  # Minimum distance between digit centers
+        
+        for i in range(n_digits):
+            digit_size = int(original_size * scales[i])
+            
+            # Try to find a position that's not too close to existing digits
+            for attempt in range(20):
+                x = np.random.randint(0, max(1, w - digit_size))
+                y = np.random.randint(0, max(1, h - digit_size))
+                
+                # Check distance from other digits
+                too_close = False
+                for px, py in positions:
+                    dist = np.sqrt((x - px)**2 + (y - py)**2)
+                    if dist < min_distance:
+                        too_close = True
+                        break
+                
+                if not too_close or attempt == 19:  # Accept if far enough or last attempt
+                    break
+            
+            positions.append([x, y])
+        
+        positions = np.array(positions, dtype=float)
+        
+        # Generate video frames
+        video = np.zeros((nt, 1, h, w), dtype=np.float32)
+        
+        for t in range(nt):
+            frame = np.zeros((h, w), dtype=np.float32)
+            
+            for i in range(n_digits):
+                # Current position
+                x, y = int(positions[i, 0]), int(positions[i, 1])
+                
+                # Resize digit
+                digit_size = int(original_size * scales[i])
+                digit = cv2.resize(digits[i], (digit_size, digit_size), interpolation=cv2.INTER_LINEAR)
+                
+                # Calculate visible region
+                x_start_frame = max(0, x)
+                y_start_frame = max(0, y)
+                x_end_frame = min(w, x + digit_size)
+                y_end_frame = min(h, y + digit_size)
+                
+                x_start_digit = max(0, -x)
+                y_start_digit = max(0, -y)
+                x_end_digit = x_start_digit + (x_end_frame - x_start_frame)
+                y_end_digit = y_start_digit + (y_end_frame - y_start_frame)
+                
+                # Skip if no overlap
+                if x_end_frame <= x_start_frame or y_end_frame <= y_start_frame:
+                    continue
+                
+                # Get visible part of digit
+                visible_digit = digit[y_start_digit:y_end_digit, x_start_digit:x_end_digit]
+                
+                # Simple max compositing (digit on top of what's already there)
+                current_region = frame[y_start_frame:y_end_frame, x_start_frame:x_end_frame]
+                frame[y_start_frame:y_end_frame, x_start_frame:x_end_frame] = np.maximum(current_region, visible_digit)
+            
+            video[t, 0] = frame
+            
+            # Update positions for next frame
+            positions += velocities
+        
+        return video
+    
+    def generate_dataset(self, num_samples, n_digits, min_scale=1.0, max_scale=2.0):
+        """
+        Generate a dataset of grayscale moving MNIST videos.
+        Saves with 1 channel. Use load_dataset_with_channel_check() to load and expand to 3 channels.
+        
+        Args:
+            num_samples: Number of videos to generate
+            n_digits: Number of digits per video
+            min_scale, max_scale: Scale range for digits
+        
+        Returns:
+            dataset: numpy array of shape (num_samples, nt, 1, h, w)
+            save_path: Path where dataset was saved
+        """
+        save_path = f'./custom_dataset/mnist_grayscale_{num_samples}_{self.nt}.npy'
+        if os.path.exists(save_path):
+            print(f"Dataset already exists at {save_path}")
+            return np.load(save_path), save_path
+        
+        dataset = []
+        for _ in tqdm(range(num_samples), desc="Generating videos"):
+            video = self.generate_random_video(n_digits, min_scale, max_scale)
+            dataset.append(video)
+        
+        dataset = np.stack(dataset)
+        
+        # Save dataset as npy file (with 1 channel)
+        os.makedirs('./custom_dataset', exist_ok=True)
+        np.save(save_path, dataset)
+        print(f"Dataset saved at {save_path}")
+        print(f"Dataset shape: {dataset.shape}")
+        return dataset, save_path
+
 
 class MovingMnistDatasetGenerator():
     def __init__(self, nt, h, w):
@@ -148,7 +293,7 @@ class MovingMnistDatasetGenerator():
             return np.load(save_path), save_path
         
         dataset = []
-        for _ in range(num_samples):
+        for _ in tqdm(range(num_samples), desc="Generating videos"):
             video = self.generate_random_video(n_digits, min_scale, max_scale, num_dilate_iterations)
             dataset.append(video)
             
@@ -161,6 +306,8 @@ class MovingMnistDatasetGenerator():
         return dataset, save_path
     
 if __name__ == '__main__':
-    generator = MovingMnistDatasetGenerator(nt=5, h=64, w=64)
-    dataset = generator.generate_dataset(num_samples=10000, n_digits=3, max_scale=1.2)
-    print(dataset.shape)
+    generator = GrayscaleMovingMnistGenerator(nt=10, h=128, w=160)
+    dataset = generator.generate_dataset(num_samples=10000, n_digits=3, max_scale=2.5, min_scale=2.0)
+    dataset_path = f'./custom_dataset/mnist_grayscale_{10000}_{10}.npy'
+    train_path, val_path = split_custom_mnist_data(datapath=dataset_path, nt=10)
+    print(train_path, val_path)

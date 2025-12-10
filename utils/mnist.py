@@ -102,8 +102,17 @@ class CustomMNISTDataset(Dataset):
     def __init__(
         self, 
         data_path,
+        target_channels=3,
     ):
-        self.X = np.load(data_path) # (batch, nt, channels, h, w)
+        self.X = np.load(data_path)  # (batch, nt, channels, h, w)
+        self.target_channels = target_channels
+        
+        # Expand channels if needed (e.g., 1 channel to 3 channels)
+        if len(self.X.shape) == 5:
+            current_channels = self.X.shape[2]
+            if current_channels == 1 and target_channels == 3:
+                self.X = np.repeat(self.X, 3, axis=2)
+                print(f"Expanded dataset from 1 channel to 3 channels. New shape: {self.X.shape}")
         
     def preprocess(self, X):
         X = X.astype(np.float32)
