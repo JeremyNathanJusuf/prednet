@@ -1,11 +1,14 @@
 import os
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 
 from utils.mnist import MNISTDataloader
+from utils.model import load_model
+from utils.plot import plot_predictions, plot_comparison
 from prednet import Prednet
 import config
+from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
+from tqdm import tqdm
 
 # Import parameters from config
 device = config.device
@@ -27,37 +30,8 @@ A_activation = config.A_activation
 
 model_path = config.model_path
 
-def load_model(model, model_path):
-    """Load model weights from checkpoint or pretrained weights.
-    
-    Supports two formats:
-    1. Checkpoint dict with 'model_state_dict' key (from previous training)
-    2. Direct state_dict (from pretrained weights .pkl file)
-    """
-    checkpoint = torch.load(model_path, map_location=device)
-    
-    # Check if it's a checkpoint dict or a direct state_dict
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        # Direct state_dict format (pretrained weights)
-        model.load_state_dict(checkpoint)
-        print(f"Loaded pretrained weights from {model_path}")
-    
-    return model
 
 def get_model_and_dataloader(data_path, extrap_time=None):
-    """
-    Initialize model and dataloader for MNIST dataset.
-    
-    Args:
-        data_path: Path to MNIST .npy file
-        extrap_time: Number of extrapolation steps
-    
-    Returns:
-        model, dataloader
-    """
-    # Use "custom_mnist" dataset type for the custom MNIST format
     dataloader = MNISTDataloader(
         data_path=data_path,
         batch_size=batch_size, 
@@ -78,96 +52,13 @@ def get_model_and_dataloader(data_path, extrap_time=None):
         device=device
     )
     model.to(device=device)
-    model = load_model(model, model_path)
+    model, _, _ = load_model(model, model_path, device)
     model.eval()
     
     return model, dataloader
 
-def plot_predictions(gt_frames, pred_frames, batch_idx, step, save_dir='./eval_plots_mnist'):
-    """
-    Plot ground truth vs model predictions.
-    
-    Args:
-        gt_frames: Ground truth frames (batch, nt, C, H, W)
-        pred_frames: Model predictions (batch, nt, C, H, W)
-        batch_idx: Which batch item to visualize
-        step: Step number for filename
-        save_dir: Directory to save plots
-    """
-    os.makedirs(save_dir, exist_ok=True)
-    
-    # Convert to numpy if needed
-    if isinstance(gt_frames, torch.Tensor):
-        gt_frames = gt_frames.cpu().numpy()
-    if isinstance(pred_frames, torch.Tensor):
-        pred_frames = pred_frames.cpu().numpy()
-    
-    # Select single batch item
-    gt = gt_frames[batch_idx]  # (nt, C, H, W)
-    pred = pred_frames[batch_idx]  # (nt, C, H, W)
-    
-    nt = gt.shape[0]
-    
-    # Create figure with 2 rows: ground truth and predictions
-    fig, axes = plt.subplots(2, nt, figsize=(2*nt, 4))
-    
-    for t in range(nt):
-        # Ground truth
-        img_gt = np.transpose(gt[t], (1, 2, 0))  # (H, W, C)
-        img_gt = np.clip(img_gt, 0, 1)  # Clip to valid range
-        if img_gt.shape[2] == 1:  # Grayscale
-            img_gt = img_gt.squeeze(-1)
-            axes[0, t].imshow(img_gt, cmap='gray', vmin=0, vmax=1)
-        elif img_gt.shape[2] == 3:
-            # Check if it's actually grayscale (all channels same) - display as grayscale
-            if np.allclose(img_gt[:,:,0], img_gt[:,:,1]) and np.allclose(img_gt[:,:,1], img_gt[:,:,2]):
-                axes[0, t].imshow(img_gt[:,:,0], cmap='gray', vmin=0, vmax=1)
-            else:
-                axes[0, t].imshow(img_gt)
-        else:
-            axes[0, t].imshow(img_gt)
-        axes[0, t].axis('off')
-        axes[0, t].set_title(f'GT t={t}', fontsize=10)
-        
-        # Model prediction
-        img_pred = np.transpose(pred[t], (1, 2, 0))  # (H, W, C)
-        img_pred = np.clip(img_pred, 0, 1)  # Clip to valid range
-        if img_pred.shape[2] == 1:  # Grayscale
-            img_pred = img_pred.squeeze(-1)
-            axes[1, t].imshow(img_pred, cmap='gray', vmin=0, vmax=1)
-        elif img_pred.shape[2] == 3:
-            # Check if it's actually grayscale (all channels same) - display as grayscale
-            if np.allclose(img_pred[:,:,0], img_pred[:,:,1], atol=0.1) and np.allclose(img_pred[:,:,1], img_pred[:,:,2], atol=0.1):
-                axes[1, t].imshow(img_pred[:,:,0], cmap='gray', vmin=0, vmax=1)
-            else:
-                # Show as RGB but also print channel stats for debugging
-                axes[1, t].imshow(img_pred)
-        else:
-            axes[1, t].imshow(img_pred)
-        axes[1, t].axis('off')
-        axes[1, t].set_title(f'Pred t={t}', fontsize=10)
-    
-    # Row labels
-    axes[0, 0].set_ylabel('Ground Truth', fontsize=12, rotation=0, ha='right', va='center')
-    axes[1, 0].set_ylabel('Model Pred', fontsize=12, rotation=0, ha='right', va='center')
-    
-    plt.suptitle(f'MNIST Evaluation - Batch {batch_idx}, Step {step}', fontsize=14)
-    plt.tight_layout()
-    
-    save_path = os.path.join(save_dir, f'mnist_step{step}_batch{batch_idx}.png')
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Saved plot to {save_path}")
 
 def evaluate_and_plot(data_path, extrap_time=4, num_samples=5):
-    """
-    Evaluate model and create visualization plots.
-    
-    Args:
-        data_path: Path to MNIST .npy file
-        extrap_time: Number of extrapolation steps
-        num_samples: Number of samples to plot
-    """
     print(f"\nEvaluating MNIST dataset:")
     print(f"  Data path: {data_path}")
     print(f"  Model extrapolation time: {extrap_time}")
@@ -202,10 +93,6 @@ def evaluate_and_plot(data_path, extrap_time=4, num_samples=5):
                     )
                     plot_count += 1
             
-            # Print progress
-            if step % 5 == 0:
-                print(f"Processed {step} batches...")
-            
             if plot_count >= num_samples:
                 break
             
@@ -215,20 +102,103 @@ def evaluate_and_plot(data_path, extrap_time=4, num_samples=5):
     print(f"Evaluation complete! Generated {plot_count} plots.")
     print(f"Plots saved to: ./eval_plots_mnist/")
     print("="*60)
+    
+def evaluate_and_compare_to_baseline(data_path, extrap_time=4, num_samples=5):
+    model, dataloader = get_model_and_dataloader(data_path, extrap_time=extrap_time)
+    
+    plot_count = 0
+    total_naive_l1_error = 0
+    total_naive_l2_error = 0
+    total_naive_psnr = 0
+    total_naive_ssim = 0
+    total_model_l1_error = 0
+    total_model_l2_error = 0
+    total_model_psnr = 0
+    total_model_ssim = 0
+    
+    total_steps = len(dataloader)
+    
+    with torch.no_grad():
+        for step, frames in tqdm(enumerate(dataloader, start=1), total=total_steps):
+            batch_size_actual = frames.shape[0]
+            nt_actual = frames.shape[1]
+            
+            # Get model predictions
+            initial_states = model.get_initial_states(input_shape)
+            output_list, _ = model(frames.to(device), initial_states)
+            model_pred_frames = torch.stack(output_list, dim=1)  # (batch, nt, C, H, W)
+            model_pred_frames = model_pred_frames.detach().cpu()
+            
+            # Create naive predictions: repeat the last frame before extrapolation for all timesteps
+            # For t < extrap_time: use actual frames, for t >= extrap_time: repeat frame at extrap_time-1
+            naive_pred_frames = frames.clone()
+            last_frame = frames[:, extrap_time-1:extrap_time, ...]  # (batch, 1, C, H, W)
+            naive_pred_frames[:, extrap_time:, ...] = last_frame.expand(-1, nt_actual - extrap_time, -1, -1, -1)
+            
+            # For metrics, compare extrapolated frames only
+            gt_extrap = frames[:, extrap_time:, ...]
+            model_extrap = model_pred_frames[:, extrap_time:, ...]
+            naive_extrap = naive_pred_frames[:, extrap_time:, ...]
+            
+            # Reshape from (B, T, C, H, W) to (B*T, C, H, W) for PSNR/SSIM
+            b, t, c, h, w = gt_extrap.shape
+            gt_extrap_flat = gt_extrap.reshape(b * t, c, h, w)
+            model_extrap_flat = model_extrap.reshape(b * t, c, h, w)
+            naive_extrap_flat = naive_extrap.reshape(b * t, c, h, w)
+            
+            # Model metrics
+            model_l1 = torch.mean(torch.abs(model_extrap - gt_extrap))
+            model_l2 = torch.mean(torch.pow(model_extrap - gt_extrap, 2))
+            model_psnr = peak_signal_noise_ratio(model_extrap_flat, gt_extrap_flat, data_range=1.0)
+            model_ssim = structural_similarity_index_measure(model_extrap_flat, gt_extrap_flat, data_range=1.0)
+            
+            # Naive baseline metrics
+            naive_l1 = torch.mean(torch.abs(naive_extrap - gt_extrap))
+            naive_l2 = torch.mean(torch.pow(naive_extrap - gt_extrap, 2))
+            naive_psnr = peak_signal_noise_ratio(naive_extrap_flat, gt_extrap_flat, data_range=1.0)
+            naive_ssim = structural_similarity_index_measure(naive_extrap_flat, gt_extrap_flat, data_range=1.0)
+            
+            total_model_l1_error += model_l1.item()
+            total_model_l2_error += model_l2.item()
+            total_model_psnr += model_psnr.item()
+            total_model_ssim += model_ssim.item()
+            total_naive_l1_error += naive_l1.item()
+            total_naive_l2_error += naive_l2.item()
+            total_naive_psnr += naive_psnr.item()
+            total_naive_ssim += naive_ssim.item()
+            
+            # Generate comparison plots for first few samples
+            if plot_count < num_samples:
+                for batch_idx in range(min(2, batch_size_actual)):
+                    if plot_count >= num_samples:
+                        break
+                    plot_comparison(
+                        frames,
+                        model_pred_frames,
+                        naive_pred_frames,
+                        batch_idx,
+                        step,
+                        extrap_time=extrap_time,
+                        save_dir='./eval_plots_mnist'
+                    )
+                    plot_count += 1
+            
+            del initial_states, output_list
 
+    print(f"Total model L1 error: {total_model_l1_error / total_steps:.4f}")
+    print(f"Total model L2 error: {total_model_l2_error / total_steps:.4f}")
+    print(f"Total model PSNR: {total_model_psnr / total_steps:.4f}")
+    print(f"Total model SSIM: {total_model_ssim / total_steps:.4f}")
+    print(f"Total naive L1 error: {total_naive_l1_error / total_steps:.4f}")
+    print(f"Total naive L2 error: {total_naive_l2_error / total_steps:.4f}")
+    print(f"Total naive PSNR: {total_naive_psnr / total_steps:.4f}")
+    print(f"Total naive SSIM: {total_naive_ssim / total_steps:.4f}")
+    
 if __name__ == '__main__':
-    # You can change this to your MNIST data path
-    # For now, using the val data path from config
     data_path = config.val_path
-    
-    print(f"Using data from: {data_path}")
-    print("Note: This script uses 'custom_mnist' dataset type")
-    print("If you need to use a different data file, update the data_path variable.\n")
-    
-    # Evaluate and plot
-    evaluate_and_plot(
+
+    evaluate_and_compare_to_baseline(
         data_path=data_path,
         extrap_time=4,
         num_samples=5
     )
-

@@ -10,7 +10,7 @@ import wandb
 import random
 import matplotlib.pyplot as plt
 
-from utils import EarlyStopping
+from utils import EarlyStopping, save_model, save_best_val_model, load_model
 from prednet import Prednet
 from utils.mnist import MNISTDataloader, split_custom_mnist_data
 from utils.plot import plot_hidden_states_list
@@ -67,58 +67,6 @@ lr_lambda = config.get_lr_lambda(init_lr, latter_lr)
 # lr_scheduler_factor = 0.5  # Factor by which to reduce LR
 # lr_scheduler_patience = 5  # Number of epochs with no improvement after which LR will be reduced
 # lr_scheduler_min_lr = 1e-6  # Minimum learning rate
-
-def save_model(model, optimizer, epoch, avg_train_error, avg_val_error=None):
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    model_path = os.path.join(checkpoint_dir, f'epoch_{epoch}.pth')
-    
-    checkpoint_data = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'avg_train_error': avg_train_error,
-    }
-    
-    if avg_val_error is not None:
-        checkpoint_data['avg_val_error'] = avg_val_error
-    
-    torch.save(checkpoint_data, model_path)
-    
-    print(f'Saved model to: {model_path}')
-
-def save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error):
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    model_path = os.path.join(checkpoint_dir, 'epoch_best_val.pth')
-    
-    torch.save({
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'avg_train_error': avg_train_error,
-        'avg_val_error': avg_val_error,
-    }, model_path)
-    
-    print(f'Saved best validation model to: {model_path} (epoch {epoch}, val_error: {avg_val_error:.6f})')
-
-def load_model(model, optimizer, lr_scheduler, model_path, load_optimizer=True):
-    checkpoint = torch.load(model_path, map_location=device)
-    
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-        
-        if load_optimizer and 'optimizer_state_dict' in checkpoint:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            
-            if hasattr(lr_scheduler, 'last_epoch'):
-                lr_scheduler.last_epoch = checkpoint["epoch"] - 1
-                lr_scheduler.step()
-        else:
-            print(f"Loading model weights only (not optimizer state) from {model_path}")
-    else:
-        model.load_state_dict(checkpoint)
-        print(f"Loaded pretrained weights from {model_path}")
-    
-    return model, optimizer, lr_scheduler
 
 def train():
     wandb.init(
@@ -196,7 +144,7 @@ def train():
     
     if is_finetuning:
         # load_optimizer=False to start fresh optimizer when finetuning on new data
-        model, optimizer, lr_scheduler = load_model(model, optimizer, lr_scheduler, model_checkpoint_path, load_optimizer=False)
+        model, optimizer, lr_scheduler = load_model(model, model_checkpoint_path, device, optimizer, lr_scheduler, load_optimizer=False)
 
     global_step = 1
     # global_step = 300*96+1
@@ -214,7 +162,7 @@ def train():
         # Save best validation model
         if avg_val_error < best_val_error:
             best_val_error = avg_val_error
-            save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error)
+            save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error, checkpoint_dir)
         
         wandb.log({
             "epoch": epoch,
@@ -228,7 +176,7 @@ def train():
         
         # Save model every num_save epochs or at the end
         if epoch % num_save == 0 or epoch == nb_epoch:
-            save_model(model, optimizer, epoch, avg_train_error, avg_val_error)
+            save_model(model, optimizer, epoch, avg_train_error, checkpoint_dir, avg_val_error)
         
         # Step the learning rate scheduler with validation error
         # lr_scheduler.step(avg_val_error)
