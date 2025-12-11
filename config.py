@@ -32,7 +32,7 @@ nb_epoch = 1000
 batch_size = 8
 num_workers = 4
 patience = 15
-init_lr = 6e-4
+init_lr = 5e-3
 latter_lr = 5e-4
 
 # Model Checkpointing
@@ -42,21 +42,22 @@ num_plot = 25
 # Model parameters
 n_channels, im_height, im_width = (3, 128, 160)  # RGB images (128x160 for moving MNIST)
 input_shape = (batch_size, n_channels, im_height, im_width)
-A_stack_sizes = (n_channels, 32, 64, 128, 256)
+# Architecture must match pretrained KITTI weights: 4 layers with (3, 48, 96, 192) channels
+A_stack_sizes = (n_channels, 48, 96, 192)
 R_stack_sizes = A_stack_sizes
-A_filter_sizes = (3, 3, 3, 3)
-Ahat_filter_sizes = (3, 3, 3, 3, 3)
-R_filter_sizes = (3, 3, 3, 3, 3)
+A_filter_sizes = (3, 3, 3)
+Ahat_filter_sizes = (3, 3, 3, 3)
+R_filter_sizes = (3, 3, 3, 3)
 
 # Model training parameters
-nt = 8  # number of timesteps used for sequences in training
+nt = 10  # number of timesteps used for sequences in training
 pixel_max = 1.0
 lstm_activation = 'relu'
 A_activation = 'relu'
 
-# Loss weights
-# layer_loss_weights_array = np.array([1., .1, .1, .1, .1])  # weighting for each layer in final loss
-layer_loss_weights_array = np.array([1., 0, 0, 0, 0])
+# Loss weights (4 layers to match pretrained architecture)
+# layer_loss_weights_array = np.array([1., .1, .1, .1])  # weighting for each layer in final loss
+layer_loss_weights_array = np.array([1., 0, 0, 0])
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
 time_loss_weights[0] = 0
 
@@ -72,11 +73,13 @@ def get_lr_lambda(init_lr, latter_lr):
 
 # Evaluation parameters
 n_samples_eval = 10
-model_path = './checkpoints_15_nov_1_finetune_l0/epoch_best_val.pth'  # Default model checkpoint path
+model_path = './pretrained/preTrained_weights_forPyTorch.pkl'  # Use pretrained weights for evaluation
 
 # Finetuning
 is_finetuning = True
-extrap_time = 4
-model_checkpoint_path = './checkpoints_14_nov_1/epoch_100.pth'  # Path to checkpoint for finetuning  
+extrap_time = None
+# Use pretrained KITTI weights for finetuning on new data
+pretrained_weights_path = './pretrained/preTrained_weights_forPyTorch.pkl'
+model_checkpoint_path = pretrained_weights_path  # Path to checkpoint/pretrained weights for finetuning  
 
 

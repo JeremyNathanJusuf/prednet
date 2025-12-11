@@ -101,34 +101,22 @@ def save_best_val_model(model, optimizer, epoch, avg_train_error, avg_val_error)
     print(f'Saved best validation model to: {model_path} (epoch {epoch}, val_error: {avg_val_error:.6f})')
 
 def load_model(model, optimizer, lr_scheduler, model_path, load_optimizer=True):
-    """
-    Load model weights from checkpoint.
-    
-    Args:
-        model: The model to load weights into
-        optimizer: The optimizer
-        lr_scheduler: The learning rate scheduler
-        model_path: Path to the checkpoint file
-        load_optimizer: If True, load optimizer and scheduler state. 
-                       If False, only load model weights (useful for finetuning from pretrained)
-    
-    Returns:
-        model, optimizer, lr_scheduler
-    """
     checkpoint = torch.load(model_path, map_location=device)
     
-    model.load_state_dict(checkpoint['model_state_dict'])
-    
-    if load_optimizer and 'optimizer_state_dict' in checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
         
-        # ReduceLROnPlateau doesn't have last_epoch attribute like other schedulers
-        # It tracks metrics internally, so we don't need to manually step it
-        if hasattr(lr_scheduler, 'last_epoch'):
-            lr_scheduler.last_epoch = checkpoint["epoch"] - 1
-            lr_scheduler.step()
+        if load_optimizer and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            if hasattr(lr_scheduler, 'last_epoch'):
+                lr_scheduler.last_epoch = checkpoint["epoch"] - 1
+                lr_scheduler.step()
+        else:
+            print(f"Loading model weights only (not optimizer state) from {model_path}")
     else:
-        print(f"Loading model weights only (not optimizer state) from {model_path}")
+        model.load_state_dict(checkpoint)
+        print(f"Loaded pretrained weights from {model_path}")
     
     return model, optimizer, lr_scheduler
 

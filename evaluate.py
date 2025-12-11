@@ -28,9 +28,22 @@ A_activation = config.A_activation
 model_path = config.model_path
 
 def load_model(model, model_path):
-    """Load model weights from checkpoint."""
+    """Load model weights from checkpoint or pretrained weights.
+    
+    Supports two formats:
+    1. Checkpoint dict with 'model_state_dict' key (from previous training)
+    2. Direct state_dict (from pretrained weights .pkl file)
+    """
     checkpoint = torch.load(model_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Check if it's a checkpoint dict or a direct state_dict
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        # Direct state_dict format (pretrained weights)
+        model.load_state_dict(checkpoint)
+        print(f"Loaded pretrained weights from {model_path}")
+    
     return model
 
 def get_model_and_dataloader(data_path, extrap_time=None):
@@ -101,20 +114,35 @@ def plot_predictions(gt_frames, pred_frames, batch_idx, step, save_dir='./eval_p
     for t in range(nt):
         # Ground truth
         img_gt = np.transpose(gt[t], (1, 2, 0))  # (H, W, C)
+        img_gt = np.clip(img_gt, 0, 1)  # Clip to valid range
         if img_gt.shape[2] == 1:  # Grayscale
             img_gt = img_gt.squeeze(-1)
-            axes[0, t].imshow(img_gt, cmap='gray')
-        else:  # RGB
+            axes[0, t].imshow(img_gt, cmap='gray', vmin=0, vmax=1)
+        elif img_gt.shape[2] == 3:
+            # Check if it's actually grayscale (all channels same) - display as grayscale
+            if np.allclose(img_gt[:,:,0], img_gt[:,:,1]) and np.allclose(img_gt[:,:,1], img_gt[:,:,2]):
+                axes[0, t].imshow(img_gt[:,:,0], cmap='gray', vmin=0, vmax=1)
+            else:
+                axes[0, t].imshow(img_gt)
+        else:
             axes[0, t].imshow(img_gt)
         axes[0, t].axis('off')
         axes[0, t].set_title(f'GT t={t}', fontsize=10)
         
         # Model prediction
         img_pred = np.transpose(pred[t], (1, 2, 0))  # (H, W, C)
+        img_pred = np.clip(img_pred, 0, 1)  # Clip to valid range
         if img_pred.shape[2] == 1:  # Grayscale
             img_pred = img_pred.squeeze(-1)
-            axes[1, t].imshow(img_pred, cmap='gray')
-        else:  # RGB
+            axes[1, t].imshow(img_pred, cmap='gray', vmin=0, vmax=1)
+        elif img_pred.shape[2] == 3:
+            # Check if it's actually grayscale (all channels same) - display as grayscale
+            if np.allclose(img_pred[:,:,0], img_pred[:,:,1], atol=0.1) and np.allclose(img_pred[:,:,1], img_pred[:,:,2], atol=0.1):
+                axes[1, t].imshow(img_pred[:,:,0], cmap='gray', vmin=0, vmax=1)
+            else:
+                # Show as RGB but also print channel stats for debugging
+                axes[1, t].imshow(img_pred)
+        else:
             axes[1, t].imshow(img_pred)
         axes[1, t].axis('off')
         axes[1, t].set_title(f'Pred t={t}', fontsize=10)

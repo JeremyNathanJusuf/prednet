@@ -25,6 +25,8 @@ debug_*
 data
 custom_dataset
 eval_results
+eval_plots_mnist
+
 # Files
 test*.ipynb
 train_backup.py
