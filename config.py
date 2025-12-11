@@ -24,8 +24,9 @@ max_scale = 2.3
 num_dilate_iterations = 1
 
 # Data paths
-train_path = "./custom_dataset/mnist_train.npy"
-val_path = "./custom_dataset/mnist_val.npy"
+mnist_raw_path = "./data/mnist_test_seq.npy"  # Raw MNIST sequence data (will be split into train/val)
+train_path = "./data/mnist_train.npy"  # Created by split_mnist_data
+val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
 
 # Training parameters
 nb_epoch = 1000

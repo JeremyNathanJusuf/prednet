@@ -1,90 +1,148 @@
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-
 import os
 from sklearn.model_selection import train_test_split
 
-def split_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
-    X = np.load(datapath)  # (20, batch, h, w)
-    X = np.transpose(X, [1, 0, 2, 3])  # (batch, 20, h, w)
-    batch, total_frames, h, w = X.shape
 
-    # DEBUG: we use only one video in the dataset (overfit the model)
-    # we instead just use the same frame over and over again
-    subsequences = X[0, :nt, ...]  # (nt, h, w)
+def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42):
+    """
+    Split raw MNIST sequence data into train and validation sets.
     
-    # subsequences = X[0, 0, ...].reshape(1, h, w).repeat(nt, axis=0) # (nt, h, w)
-    subsequences = np.expand_dims(subsequences, axis=0)  # (1, nt, h, w)
-    subsequences = np.expand_dims(subsequences, axis=2)  # (1, nt, 1, h, w)
-    subsequences = np.repeat(subsequences, 4000, axis=0)  # (400000, nt, 1, h, w), use batch = 4 to overfit the model
+    Args:
+        datapath: Path to the raw MNIST npy file (shape: (20, num_videos, h, w))
+        nt: Number of timesteps per subsequence
+        target_h: Target height for upsampling
+        target_w: Target width for upsampling
+        train_ratio: Ratio of training data
+        random_state: Random seed for reproducibility
     
-    parent_dir = os.path.dirname(datapath)
-    train_path = os.path.join(parent_dir, "mnist_overfit_one_video.npy")
-
-    np.save(train_path, subsequences)
-    return train_path, train_path
+    Returns:
+        train_path, val_path: Paths to saved train and val npy files
+    """
+    X = np.load(datapath)  # (20, num_videos, h, w)
+    X = np.transpose(X, [1, 0, 2, 3])  # (num_videos, 20, h, w)
+    num_videos, total_frames, h, w = X.shape
     
-    # ###########
+    # Calculate total number of subsequences
+    num_chunks = total_frames // nt
+    total_subseq = num_videos * num_chunks
     
-    # TODO: revert as this is overfitting with one batchsize of 4: revert back to this
-    # # Calculate total number of subsequences to pre-allocate array
-    # num_chunks = total_frames // nt
-    # total_subseq = batch * num_chunks
-    # subsequences = np.zeros((total_subseq, nt, h, w), dtype=X.dtype)
+    # Pre-allocate array for subsequences (with upsampling and 3 channels)
+    subsequences = np.zeros((total_subseq, nt, 3, target_h, target_w), dtype=np.float32)
     
-    # subseq_idx = 0
-    # for i in range(batch):
-    #     for chunk_idx in range(num_chunks):
-    #         start_idx = chunk_idx * nt
-    #         end_idx = start_idx + nt
-    #         subsequences[subseq_idx] = X[i, start_idx:end_idx, ...]  # (nt, h, w)
-    #         subseq_idx += 1
+    subseq_idx = 0
+    for i in range(num_videos):
+        for chunk_idx in range(num_chunks):
+            start_idx = chunk_idx * nt
+            end_idx = start_idx + nt
+            chunk = X[i, start_idx:end_idx, ...]  # (nt, h, w)
             
-    # subsequences = np.expand_dims(subsequences, axis=2)  # (num_subseq, nt, 1, h, w)
-
-    # train_X, val_X = train_test_split(
-    #     subsequences, 
-    #     train_size=train_ratio, 
-    #     random_state=random_state, 
-    #     shuffle=True
-    # )
-
-    # parent_dir = os.path.dirname(datapath)
-    # train_path = os.path.join(parent_dir, "mnist_train.npy")
-    # val_path = os.path.join(parent_dir, "mnist_val.npy")
-
-    # np.save(train_path, train_X)
-    # np.save(val_path, val_X)
+            # Process each frame: normalize, upsample, convert to 3 channels
+            for t in range(nt):
+                frame = chunk[t].astype(np.float32) / 255.0
+                frame = np.clip(frame, 0.0, 1.0)
+                
+                # Upsample using PIL
+                frame_uint8 = (frame * 255).astype(np.uint8)
+                pil_img = Image.fromarray(frame_uint8, mode='L')
+                pil_img_resized = pil_img.resize((target_w, target_h), Image.LANCZOS)
+                frame_resized = np.array(pil_img_resized).astype(np.float32) / 255.0
+                
+                # Replicate to 3 channels
+                subsequences[subseq_idx, t, 0, :, :] = frame_resized
+                subsequences[subseq_idx, t, 1, :, :] = frame_resized
+                subsequences[subseq_idx, t, 2, :, :] = frame_resized
+            
+            subseq_idx += 1
     
-    # return train_path, val_path
+    print(f"Created {total_subseq} subsequences with shape: {subsequences.shape}")
     
-def split_custom_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
-    X = np.load(datapath)  # (batch, nt, channels, h, w)
-    batch, total_frames, channels, h, w = X.shape
+    # Split into train and validation
+    train_X, val_X = train_test_split(
+        subsequences, 
+        train_size=train_ratio, 
+        random_state=random_state, 
+        shuffle=True
+    )
     
     parent_dir = os.path.dirname(datapath)
     train_path = os.path.join(parent_dir, "mnist_train.npy")
     val_path = os.path.join(parent_dir, "mnist_val.npy")
+    
+    np.save(train_path, train_X)
+    np.save(val_path, val_X)
+    
+    print(f"Saved train set: {train_X.shape} to {train_path}")
+    print(f"Saved val set: {val_X.shape} to {val_path}")
+    
+    return train_path, val_path
 
+
+def split_custom_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42):
+    """
+    Split custom MNIST dataset (from generator) into train and validation sets.
+    Handles upsampling and channel expansion if needed.
+    
+    Args:
+        datapath: Path to the custom MNIST npy file (shape: (batch, nt, channels, h, w))
+        nt: Number of timesteps per subsequence
+        target_h: Target height for upsampling
+        target_w: Target width for upsampling
+        train_ratio: Ratio of training data
+        random_state: Random seed for reproducibility
+    
+    Returns:
+        train_path, val_path: Paths to saved train and val npy files
+    """
+    parent_dir = os.path.dirname(datapath)
+    train_path = os.path.join(parent_dir, "mnist_train.npy")
+    val_path = os.path.join(parent_dir, "mnist_val.npy")
+    
+    # Check if already processed
     if os.path.exists(train_path) and os.path.exists(val_path):
-        print(f"train and val files already exist at {train_path} and {val_path}")
-        train_X = np.load(train_path)
-        val_X = np.load(val_path)
+        print(f"Train and val files already exist at {train_path} and {val_path}")
         return train_path, val_path
     
-    # TODO: revert as this is overfitting with one batchsize of 4
-    # print("X.shape", X.shape)
-    # subsequences = X[:4, :nt, ...]  # (4, nt, channels, h, w)
-    # final_subsequences = np.zeros((4000, nt, channels, h, w))
-    # for i in range(1000):
-    #     final_subsequences[4*i:4*i+4] = subsequences
-    # print("subsequences.shape", final_subsequences.shape)
-    # parent_dir = os.path.dirname(datapath)
-    # train_path = os.path.join(parent_dir, "custom_mnist_overfit_one_video.npy")
+    X = np.load(datapath)  # (batch, nt, channels, h, w)
+    num_samples, num_frames, channels, h, w = X.shape
     
-    #######
+    # Check if upsampling or channel expansion is needed
+    needs_upsample = (h != target_h) or (w != target_w)
+    needs_channel_expand = (channels == 1)
     
+    if needs_upsample or needs_channel_expand:
+        target_channels = 3 if needs_channel_expand else channels
+        X_processed = np.zeros((num_samples, num_frames, target_channels, target_h, target_w), dtype=np.float32)
+        
+        for i in range(num_samples):
+            for t in range(num_frames):
+                if channels == 1:
+                    frame = X[i, t, 0, :, :]  # (h, w)
+                else:
+                    frame = X[i, t, 0, :, :]  # Use first channel for grayscale processing
+                
+                # Normalize if needed (check if values are in 0-255 range)
+                if frame.max() > 1.0:
+                    frame = frame.astype(np.float32) / 255.0
+                
+                frame = np.clip(frame, 0.0, 1.0)
+                
+                if needs_upsample:
+                    frame_uint8 = (frame * 255).astype(np.uint8)
+                    pil_img = Image.fromarray(frame_uint8, mode='L')
+                    pil_img_resized = pil_img.resize((target_w, target_h), Image.LANCZOS)
+                    frame = np.array(pil_img_resized).astype(np.float32) / 255.0
+                
+                # Replicate to 3 channels
+                X_processed[i, t, 0, :, :] = frame
+                X_processed[i, t, 1, :, :] = frame
+                X_processed[i, t, 2, :, :] = frame
+        
+        X = X_processed
+        print(f"Processed dataset shape: {X.shape}")
+    
+    # Split into train and validation
     train_X, val_X = train_test_split(
         X, 
         train_size=train_ratio, 
@@ -94,124 +152,138 @@ def split_custom_mnist_data(datapath, nt, train_ratio=0.8, random_state=42):
     
     np.save(train_path, train_X)
     np.save(val_path, val_X)
-    print(f"train shape: {train_X.shape}, val shape: {val_X.shape}")
+    
+    print(f"Saved train set: {train_X.shape} to {train_path}")
+    print(f"Saved val set: {val_X.shape} to {val_path}")
+    
     return train_path, val_path
 
-    
-class CustomMNISTDataset(Dataset):
+
+class MNISTDataset(Dataset):
+    """
+    Dataset for loading pre-processed MNIST sequences.
+    Expects data in shape (batch, nt, channels, h, w) with values in [0, 1].
+    Handles upsampling and channel expansion if needed.
+    """
     def __init__(
         self, 
         data_path,
+        target_h=128,
+        target_w=160,
         target_channels=3,
     ):
-        self.X = np.load(data_path)  # (batch, nt, channels, h, w)
+        self.X = np.load(data_path)
+        self.target_h = target_h
+        self.target_w = target_w
         self.target_channels = target_channels
         
-        # Expand channels if needed (e.g., 1 channel to 3 channels)
+        # Get current shape
         if len(self.X.shape) == 5:
-            current_channels = self.X.shape[2]
-            if current_channels == 1 and target_channels == 3:
-                self.X = np.repeat(self.X, 3, axis=2)
-                print(f"Expanded dataset from 1 channel to 3 channels. New shape: {self.X.shape}")
+            _, _, current_channels, current_h, current_w = self.X.shape
+        else:
+            raise ValueError(f"Expected 5D array, got shape {self.X.shape}")
+        
+        # Check if preprocessing is needed
+        self.needs_upsample = (current_h != target_h) or (current_w != target_w)
+        self.needs_channel_expand = (current_channels == 1) and (target_channels == 3)
+        
+        # If no preprocessing needed and channels match, just expand channels if needed
+        if not self.needs_upsample and current_channels == 1 and target_channels == 3:
+            self.X = np.repeat(self.X, 3, axis=2)
+            self.needs_channel_expand = False
+            print(f"Expanded dataset from 1 channel to 3 channels. New shape: {self.X.shape}")
         
     def preprocess(self, X):
-        X = X.astype(np.float32)
-        return X
+        """Preprocess a single sample: upsample and expand channels if needed."""
+        # X shape: (nt, channels, h, w)
+        if not self.needs_upsample and not self.needs_channel_expand:
+            return X.astype(np.float32)
+        
+        nt = X.shape[0]
+        X_processed = np.zeros((nt, self.target_channels, self.target_h, self.target_w), dtype=np.float32)
+        
+        for t in range(nt):
+            frame = X[t, 0, :, :]  # (h, w)
+            
+            # Normalize if needed
+            if frame.max() > 1.0:
+                frame = frame.astype(np.float32) / 255.0
+            frame = np.clip(frame, 0.0, 1.0)
+            
+            if self.needs_upsample:
+                frame_uint8 = (frame * 255).astype(np.uint8)
+                pil_img = Image.fromarray(frame_uint8, mode='L')
+                pil_img_resized = pil_img.resize((self.target_w, self.target_h), Image.LANCZOS)
+                frame = np.array(pil_img_resized).astype(np.float32) / 255.0
+            
+            # Replicate to target channels
+            for c in range(self.target_channels):
+                X_processed[t, c, :, :] = frame
+        
+        return X_processed
     
-    def __getitem__(self, pos_idx):
-        x = self.X[pos_idx, ...]
+    def __getitem__(self, idx):
+        x = self.X[idx, ...]
         x = self.preprocess(x)
         return x
     
     def __len__(self):
         return len(self.X)
 
-class MNISTDataset(Dataset):
-    def __init__(
-        self, 
-        data_path,
-    ):
-        self.X = np.load(data_path)  # (batch, nt, 1, h, w)
-        
-    def preprocess(self, X):
-        # X shape: (nt, 1, h, w)
-        X = X.astype(np.float32) / 255.0
-        X = np.clip(X, 0.0, 1.0)
-        
-        # Upsample to 128x160 and convert to RGB (3 channels)
-        # nt, c, h, w = X.shape
-        # target_h, target_w = 128, 160
-        # X_upsampled = np.zeros((nt, 3, target_h, target_w), dtype=np.float32)
-        # X_upsampled = X.repeat(3, axis=1)
-        X_upsampled = X
-        
-        # for t in range(nt):
-        #     # Get single frame (1, h, w) and squeeze to (h, w)
-        #     frame = X[t, 0, :, :]  # (h, w)
-            
-        #     # Convert to PIL Image for upsampling
-        #     # Scale to 0-255 for PIL, then back to 0-1
-        #     frame_uint8 = (frame * 255).astype(np.uint8)
-        #     pil_img = Image.fromarray(frame_uint8, mode='L')
-            
-        #     # Resize using LANCZOS interpolation
-        #     pil_img_resized = pil_img.resize((target_w, target_h), Image.LANCZOS)
-            
-        #     # Convert back to numpy and normalize
-        #     frame_resized = np.array(pil_img_resized).astype(np.float32) / 255.0
-            
-        #     # Convert grayscale to RGB by replicating the channel
-        #     X_upsampled[t, 0, :, :] = frame_resized
-        #     X_upsampled[t, 1, :, :] = frame_resized
-        #     X_upsampled[t, 2, :, :] = frame_resized
-        
-        # print(X_upsampled.shape)
-        return X_upsampled
-    
-    def __getitem__(self, pos_idx):
-        x = self.X[pos_idx, ...]
-        x = self.preprocess(x)
-        return x
-    
-    def __len__(self):
-        return len(self.X)
-    
+
 class MNISTDataloader:
+    """
+    Dataloader wrapper for MNIST datasets.
+    """
     def __init__(
         self, 
         data_path,
         batch_size,
         num_workers,
+        target_h=128,
+        target_w=160,
+        target_channels=3,
     ):
-        self.data_path=data_path
-        self.batch_size=batch_size
-        self.num_workers=num_workers
+        self.data_path = data_path
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.target_h = target_h
+        self.target_w = target_w
+        self.target_channels = target_channels
         
-    def dataloader(self, mnist_dataset_type):
-        if mnist_dataset_type == "custom_mnist":
-            mnist_dataset = CustomMNISTDataset(
-                self.data_path
-            )
-        else:
-            mnist_dataset = MNISTDataset(
-                self.data_path
-            )
-            
+    def dataloader(self, shuffle=True):
+        """Create and return a DataLoader."""
+        dataset = MNISTDataset(
+            self.data_path,
+            target_h=self.target_h,
+            target_w=self.target_w,
+            target_channels=self.target_channels,
+        )
+        
         dataloader = DataLoader(
-            mnist_dataset, 
+            dataset, 
             batch_size=self.batch_size, 
-            shuffle=True, 
+            shuffle=shuffle, 
             num_workers=self.num_workers,
             drop_last=False
         )
         
         return dataloader
-    
+
 
 if __name__ == "__main__":
-    data_path = "./mnist_data/mnist_test_seq.npy"
-    batch_size = 32
-    num_workers = 4
-    split_mnist_data(data_path, 5)
+    # Test with raw MNIST data
+    data_path = "./data/MNIST/mnist_test_seq.npy"
+    if os.path.exists(data_path):
+        train_path, val_path = split_mnist_data(data_path, nt=10)
         
-    
+        # Test dataloader
+        dataloader = MNISTDataloader(
+            data_path=train_path,
+            batch_size=8,
+            num_workers=2
+        ).dataloader()
+        
+        for batch in dataloader:
+            print(f"Batch shape: {batch.shape}")
+            break

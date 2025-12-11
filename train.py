@@ -8,11 +8,10 @@ import time
 import logging
 import wandb
 import random
-import matplotlib.pyplot as plt
 
 from utils import EarlyStopping, save_model, save_best_val_model, load_model
 from prednet import Prednet
-from utils.mnist import MNISTDataloader, split_custom_mnist_data
+from utils.mnist import MNISTDataloader, split_mnist_data
 from utils.plot import plot_hidden_states_list
 from utils.dataset_generator import GrayscaleMovingMnistGenerator
 import config
@@ -28,6 +27,7 @@ num_samples = config.num_samples
 min_scale = config.min_scale
 max_scale = config.max_scale
 num_dilate_iterations = config.num_dilate_iterations
+mnist_raw_path = config.mnist_raw_path
 
 nb_epoch = config.nb_epoch
 batch_size = config.batch_size
@@ -90,28 +90,32 @@ def train():
             "device": device
         }
     )
-    # GENERATE AND SPLIT DATASET (using grayscale generator)
-    generator = GrayscaleMovingMnistGenerator(nt=nt, h=im_height, w=im_width)
-    dataset, dataset_path = generator.generate_dataset(
-        num_samples=num_samples, 
-        n_digits=n_digits, 
-        min_scale=min_scale, 
-        max_scale=max_scale,
+    
+    # LOAD AND SPLIT MNIST DATASET
+    train_path, val_path = split_mnist_data(
+        datapath=mnist_raw_path, 
+        nt=nt,
+        target_h=im_height,
+        target_w=im_width
     )
     
-    train_path, val_path = split_custom_mnist_data(datapath=dataset_path, nt=nt)
-
     train_dataloader = MNISTDataloader(
         data_path=train_path,
         batch_size=batch_size, 
-        num_workers=num_workers
-    ).dataloader(mnist_dataset_type="custom_mnist")
+        num_workers=num_workers,
+        target_h=im_height,
+        target_w=im_width,
+        target_channels=n_channels
+    ).dataloader(shuffle=True)
     
     val_dataloader = MNISTDataloader(
         data_path=val_path,
         batch_size=batch_size, 
-        num_workers=num_workers
-    ).dataloader(mnist_dataset_type="custom_mnist")
+        num_workers=num_workers,
+        target_h=im_height,
+        target_w=im_width,
+        target_channels=n_channels
+    ).dataloader(shuffle=False)
     
     # LOAD MODEL
     model = Prednet(
@@ -130,16 +134,8 @@ def train():
     model.to(device=device)
     
     early_stopping = EarlyStopping(patience=patience)
-    
-    optimizer = optim.Adam(model.parameters(), lr=init_lr)
-    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer, 
-    #     mode='min',
-    #     factor=lr_scheduler_factor,
-    #     patience=lr_scheduler_patience,
-    #     min_lr=lr_scheduler_min_lr
-    # )
-    
+
+    optimizer = optim.Adam(model.parameters(), lr=init_lr)    
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     if is_finetuning:

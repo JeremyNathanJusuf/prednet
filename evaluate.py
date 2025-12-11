@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 
-from utils.mnist import MNISTDataloader
+from utils.mnist import MNISTDataloader, split_mnist_data
 from utils.model import load_model
 from utils.plot import plot_predictions, plot_comparison
 from prednet import Prednet
@@ -35,8 +35,11 @@ def get_model_and_dataloader(data_path, extrap_time=None):
     dataloader = MNISTDataloader(
         data_path=data_path,
         batch_size=batch_size, 
-        num_workers=2
-    ).dataloader(mnist_dataset_type="custom_mnist")
+        num_workers=2,
+        target_h=im_height,
+        target_w=im_width,
+        target_channels=n_channels
+    ).dataloader(shuffle=False)
     
     model = Prednet(
         A_stack_sizes=A_stack_sizes, 
@@ -195,6 +198,16 @@ def evaluate_and_compare_to_baseline(data_path, extrap_time=4, num_samples=5):
     print(f"Total naive SSIM: {total_naive_ssim / total_steps:.4f}")
     
 if __name__ == '__main__':
+    # Split MNIST data if val file doesn't exist
+    if not os.path.exists(config.val_path):
+        print(f"Val file not found at {config.val_path}, splitting MNIST data...")
+        split_mnist_data(
+            datapath=config.mnist_raw_path,
+            nt=nt,
+            target_h=im_height,
+            target_w=im_width
+        )
+    
     data_path = config.val_path
 
     evaluate_and_compare_to_baseline(
