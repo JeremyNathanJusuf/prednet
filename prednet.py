@@ -179,8 +179,8 @@ class Prednet(nn.Module):
             cell_state = self.tanh(self.conv_layers['c'][l](inputs_torch))
             
             c_next = forget_gate * c_current[l] + in_gate * cell_state
-            lstm_act = self.get_activation(self.lstm_activation)
-            R_next = out_gate * lstm_act(c_next)
+            # Standard LSTM uses tanh for hidden state output (not configurable lstm_activation)
+            R_next = out_gate * self.tanh(c_next)
             
             c_list.insert(0, c_next)
             R_list.insert(0, R_next)
@@ -203,10 +203,9 @@ class Prednet(nn.Module):
                 
             # Use the correct A tensor for each layer
             A_current = A_list[l]
-            # print(Ahat.shape, A_current.shape)
-            E_pos = self.relu(Ahat - A_current)
-            E_neg = self.relu(A_current - Ahat)
-            E_list.append(torch.cat([E_neg, E_pos], dim=-3))
+            E_up = self.relu(Ahat - A_current)    # Ahat - A
+            E_down = self.relu(A_current - Ahat)  # A - Ahat
+            E_list.append(torch.cat([E_up, E_down], dim=-3))
             
             # TODO: Extract the outputs from certain module and layer
             
