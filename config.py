@@ -51,7 +51,7 @@ Ahat_filter_sizes = (3, 3, 3, 3)
 R_filter_sizes = (3, 3, 3, 3)
 
 # Model training parameters
-nt = 10  # number of timesteps used for sequences in training
+nt = 16  # number of timesteps used for sequences in training
 pixel_max = 1.0
 lstm_activation = 'relu'
 A_activation = 'relu'

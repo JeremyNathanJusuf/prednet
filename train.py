@@ -13,7 +13,6 @@ from utils import EarlyStopping, save_model, save_best_val_model, load_model
 from prednet import Prednet
 from utils.mnist import MNISTDataloader, split_mnist_data
 from utils.plot import plot_hidden_states_list
-from utils.dataset_generator import GrayscaleMovingMnistGenerator
 import config
 
 if os.path.exists('.env'):
@@ -63,10 +62,6 @@ time_loss_weights = config.time_loss_weights
 model_checkpoint_path = config.model_checkpoint_path
 
 lr_lambda = config.get_lr_lambda(init_lr, latter_lr)
-# LR scheduler parameters
-# lr_scheduler_factor = 0.5  # Factor by which to reduce LR
-# lr_scheduler_patience = 5  # Number of epochs with no improvement after which LR will be reduced
-# lr_scheduler_min_lr = 1e-6  # Minimum learning rate
 
 def train():
     wandb.init(
@@ -139,21 +134,18 @@ def train():
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     if is_finetuning:
-        # load_optimizer=False to start fresh optimizer when finetuning on new data
         model, optimizer, lr_scheduler = load_model(model, model_checkpoint_path, device, optimizer, lr_scheduler, load_optimizer=False)
 
     global_step = 1
-    # global_step = 300*96+1
     
     best_val_error = float('inf')
     
     for epoch in range(1, nb_epoch+1):
-    # for epoch in range(301, nb_epoch+1):
         train_error, global_step = train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, global_step, epoch)
         val_error = val_one_epoch(val_dataloader, model, input_shape, global_step, epoch)
         
-        avg_train_error = train_error / len(train_dataloader) # average of cumulative error
-        avg_val_error = val_error / len(val_dataloader) # average of cumulative error
+        avg_train_error = train_error / len(train_dataloader)
+        avg_val_error = val_error / len(val_dataloader)
         
         # Save best validation model
         if avg_val_error < best_val_error:
@@ -174,14 +166,10 @@ def train():
         if epoch % num_save == 0 or epoch == nb_epoch:
             save_model(model, optimizer, epoch, avg_train_error, checkpoint_dir, avg_val_error)
         
-        # Step the learning rate scheduler with validation error
-        # lr_scheduler.step(avg_val_error)
-        
+
         lr_scheduler.step()
-        
         torch.cuda.empty_cache()
         
-        # TODO: Uncomment this when we want to use early stopping
         early_stopping(val_loss=avg_val_error)
         
         if early_stopping.early_stop:
