@@ -305,6 +305,166 @@ class MovingMnistDatasetGenerator():
         print("dataset.shape", dataset.shape)
         return dataset, save_path
     
+class DisruptDatasetGenerator:
+    def __init__(self, nt, h, w, disruption_time):
+        mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transforms.ToTensor())
+        self.mnist_dataset = [img.numpy().squeeze() for img, _ in mnist_dataset]
+        self.nt = nt
+        self.h = h
+        self.w = w
+        self.disruption_time = disruption_time
+        
+    def _get_random_digit(self):
+        return self.mnist_dataset[np.random.randint(0, len(self.mnist_dataset))]
+    
+    def _init_digit_state(self, n_digits, min_scale, max_scale):
+        digits = [self._get_random_digit() for _ in range(n_digits)]
+        scales = np.random.uniform(min_scale, max_scale, size=n_digits)
+        velocities = np.random.randint(-4, 5, size=(n_digits, 2))
+        
+        positions = []
+        for i in range(n_digits):
+            digit_size = int(28 * scales[i])
+            x = np.random.randint(0, max(1, self.w - digit_size))
+            y = np.random.randint(0, max(1, self.h - digit_size))
+            positions.append([x, y])
+        
+        return digits, scales, velocities, np.array(positions, dtype=float)
+    
+    def _render_frame(self, digits, scales, positions, active_mask):
+        frame = np.zeros((self.h, self.w), dtype=np.float32)
+        
+        for i, (digit, scale, pos, active) in enumerate(zip(digits, scales, positions, active_mask)):
+            if not active:
+                continue
+                
+            x, y = int(pos[0]), int(pos[1])
+            digit_size = int(28 * scale)
+            resized = cv2.resize(digit, (digit_size, digit_size), interpolation=cv2.INTER_LINEAR)
+            
+            x_start_frame = max(0, x)
+            y_start_frame = max(0, y)
+            x_end_frame = min(self.w, x + digit_size)
+            y_end_frame = min(self.h, y + digit_size)
+            
+            x_start_digit = max(0, -x)
+            y_start_digit = max(0, -y)
+            x_end_digit = x_start_digit + (x_end_frame - x_start_frame)
+            y_end_digit = y_start_digit + (y_end_frame - y_start_frame)
+            
+            if x_end_frame <= x_start_frame or y_end_frame <= y_start_frame:
+                continue
+            
+            visible = resized[y_start_digit:y_end_digit, x_start_digit:x_end_digit]
+            current = frame[y_start_frame:y_end_frame, x_start_frame:x_end_frame]
+            frame[y_start_frame:y_end_frame, x_start_frame:x_end_frame] = np.maximum(current, visible)
+        
+        return frame
+    
+    def generate_sudden_appear(self, n_digits, min_scale, max_scale):
+        digits, scales, velocities, positions = self._init_digit_state(n_digits, min_scale, max_scale)
+        
+        new_digit = self._get_random_digit()
+        new_scale = np.random.uniform(min_scale, max_scale)
+        new_velocity = np.random.randint(-4, 5, size=2)
+        digit_size = int(28 * new_scale)
+        new_pos = np.array([np.random.randint(0, max(1, self.w - digit_size)),
+                           np.random.randint(0, max(1, self.h - digit_size))], dtype=float)
+        
+        video = np.zeros((self.nt, 1, self.h, self.w), dtype=np.float32)
+        
+        for t in range(self.nt):
+            active_mask = [True] * n_digits
+            all_digits = list(digits)
+            all_scales = list(scales)
+            all_positions = list(positions)
+            
+            if t >= self.disruption_time:
+                all_digits.append(new_digit)
+                all_scales.append(new_scale)
+                adjusted_pos = new_pos + new_velocity * (t - self.disruption_time)
+                all_positions.append(adjusted_pos)
+                active_mask.append(True)
+            
+            video[t, 0] = self._render_frame(all_digits, all_scales, all_positions, active_mask)
+            positions += velocities
+        
+        return video
+    
+    def generate_transform(self, n_digits, min_scale, max_scale, n_extra=1):
+        digits, scales, velocities, positions = self._init_digit_state(n_digits + n_extra, min_scale, max_scale)
+        
+        new_digits = [self._get_random_digit() for _ in range(n_extra)]
+        
+        video = np.zeros((self.nt, 1, self.h, self.w), dtype=np.float32)
+        
+        for t in range(self.nt):
+            current_digits = list(digits)
+            if t >= self.disruption_time:
+                for i in range(n_extra):
+                    current_digits[n_digits + i] = new_digits[i]
+            
+            active_mask = [True] * len(current_digits)
+            video[t, 0] = self._render_frame(current_digits, scales, positions, active_mask)
+            positions += velocities
+        
+        return video
+    
+    def generate_disappear(self, n_digits, min_scale, max_scale, n_extra=1):
+        digits, scales, velocities, positions = self._init_digit_state(n_digits + n_extra, min_scale, max_scale)
+        
+        video = np.zeros((self.nt, 1, self.h, self.w), dtype=np.float32)
+        
+        for t in range(self.nt):
+            active_mask = [True] * len(digits)
+            if t >= self.disruption_time:
+                for i in range(n_extra):
+                    active_mask[n_digits + i] = False
+            
+            video[t, 0] = self._render_frame(digits, scales, positions, active_mask)
+            positions += velocities
+        
+        return video
+    
+    def generate_dataset(self, num_samples, n_digits, min_scale=1.0, max_scale=2.0, n_extra=1):
+        os.makedirs('./data/adapt', exist_ok=True)
+        
+        samples_per_type = num_samples // 3
+        
+        appear_videos = []
+        for _ in tqdm(range(samples_per_type), desc="Generating sudden appear"):
+            video = self.generate_sudden_appear(n_digits, min_scale, max_scale)
+            appear_videos.append(video)
+        appear_dataset = np.stack(appear_videos)
+        appear_path = f'./data/adapt/sudden_appear_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
+        np.save(appear_path, appear_dataset)
+        print(f"Saved sudden appear: {appear_dataset.shape} to {appear_path}")
+        
+        transform_videos = []
+        for _ in tqdm(range(samples_per_type), desc="Generating transform"):
+            video = self.generate_transform(n_digits, min_scale, max_scale, n_extra)
+            transform_videos.append(video)
+        transform_dataset = np.stack(transform_videos)
+        transform_path = f'./data/adapt/transform_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
+        np.save(transform_path, transform_dataset)
+        print(f"Saved transform: {transform_dataset.shape} to {transform_path}")
+        
+        disappear_videos = []
+        for _ in tqdm(range(samples_per_type), desc="Generating disappear"):
+            video = self.generate_disappear(n_digits, min_scale, max_scale, n_extra)
+            disappear_videos.append(video)
+        disappear_dataset = np.stack(disappear_videos)
+        disappear_path = f'./data/adapt/disappear_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
+        np.save(disappear_path, disappear_dataset)
+        print(f"Saved disappear: {disappear_dataset.shape} to {disappear_path}")
+        
+        return {
+            'sudden_appear': (appear_dataset, appear_path),
+            'transform': (transform_dataset, transform_path),
+            'disappear': (disappear_dataset, disappear_path)
+        }
+
+
 if __name__ == '__main__':
     generator = GrayscaleMovingMnistGenerator(nt=10, h=128, w=160)
     dataset = generator.generate_dataset(num_samples=10000, n_digits=3, max_scale=2.5, min_scale=2.0)

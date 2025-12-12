@@ -21,7 +21,8 @@ def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, 
     num_chunks = total_frames // nt
     total_subseq = num_videos * num_chunks
     
-    subsequences = np.zeros((total_subseq, nt, 3, target_h, target_w), dtype=np.float32)
+    # Store as uint8, 1 channel - conversion to float32/3ch happens in dataloader
+    subsequences = np.zeros((total_subseq, nt, 1, target_h, target_w), dtype=np.uint8)
     
     subseq_idx = 0
     for i in range(num_videos):
@@ -31,33 +32,21 @@ def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, 
             chunk = X[i, start_idx:end_idx, ...]  # (nt, h, w)
             
             for t in range(nt):
-                frame = chunk[t].astype(np.float32) / 255.0
-                frame = np.clip(frame, 0.0, 1.0)
-                    
-                frame_uint8 = (frame * 255).astype(np.uint8)
-                pil_img = Image.fromarray(frame_uint8, mode='L')
+                frame = chunk[t]
+                pil_img = Image.fromarray(frame, mode='L')
                 pil_img_resized = pil_img.resize((target_w, target_h), Image.LANCZOS)
-                frame_resized = np.array(pil_img_resized).astype(np.float32) / 255.0
-                
-                subsequences[subseq_idx, t, 0, :, :] = frame_resized
-                subsequences[subseq_idx, t, 1, :, :] = frame_resized
-                subsequences[subseq_idx, t, 2, :, :] = frame_resized
+                subsequences[subseq_idx, t, 0, :, :] = np.array(pil_img_resized)
             
             subseq_idx += 1
     
     print(f"Created {total_subseq} subsequences with shape: {subsequences.shape}")
     
-    # Split into train and validation
     train_X, val_X = train_test_split(
         subsequences, 
         train_size=train_ratio, 
         random_state=random_state, 
         shuffle=True
     )
-    
-    parent_dir = os.path.dirname(datapath)
-    train_path = os.path.join(parent_dir, "mnist_train.npy")
-    val_path = os.path.join(parent_dir, "mnist_val.npy")
     
     np.save(train_path, train_X)
     np.save(val_path, val_X)
@@ -96,20 +85,22 @@ def split_custom_mnist_data(datapath, nt, target_h=128, target_w=160, train_rati
 
 
 class MNISTDataset(Dataset):
-    def __init__(
-        self, 
-        data_path,
-        target_h=128,
-        target_w=160,
-        target_channels=3,
-    ):
-        self.X = np.load(data_path)
+    def __init__(self, data_path, target_h=128, target_w=160, target_channels=3):
+        self.X = np.load(data_path)  # (batch, nt, 1, h, w) uint8
         self.target_h = target_h
         self.target_w = target_w
         self.target_channels = target_channels
         
     def __getitem__(self, idx):
-        x = self.X[idx, ...]
+        x = self.X[idx, ...]  # (nt, 1, h, w) uint8
+        
+        # Convert to float32 and normalize to [0, 1]
+        x = x.astype(np.float32) / 255.0
+        
+        # Expand to 3 channels if needed
+        if x.shape[1] == 1 and self.target_channels == 3:
+            x = np.repeat(x, 3, axis=1)  # (nt, 3, h, w)
+        
         return x
     
     def __len__(self):
@@ -117,15 +108,7 @@ class MNISTDataset(Dataset):
 
 
 class MNISTDataloader:
-    def __init__(
-        self, 
-        data_path,
-        batch_size,
-        num_workers,
-        target_h=128,
-        target_w=160,
-        target_channels=3,
-    ):
+    def __init__(self, data_path, batch_size, num_workers, target_h=128, target_w=160, target_channels=3):
         self.data_path = data_path
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -141,19 +124,17 @@ class MNISTDataloader:
             target_channels=self.target_channels,
         )
         
-        dataloader = DataLoader(
+        return DataLoader(
             dataset, 
             batch_size=self.batch_size, 
             shuffle=shuffle, 
             num_workers=self.num_workers,
             drop_last=False
         )
-        
-        return dataloader
 
 
 if __name__ == "__main__":
-    data_path = "./data/MNIST/mnist_test_seq.npy"
+    data_path = "./data/mnist_test_seq.npy"
     if os.path.exists(data_path):
         train_path, val_path = split_mnist_data(data_path, nt=10)
         
@@ -164,5 +145,5 @@ if __name__ == "__main__":
         ).dataloader()
         
         for batch in dataloader:
-            print(f"Batch shape: {batch.shape}")
+            print(f"Batch shape: {batch.shape}, dtype: {batch.dtype}")
             break
