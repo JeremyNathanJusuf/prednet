@@ -10,7 +10,7 @@ import torch
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training name
-training_suffix = '15_nov_1_finetune_l0'
+training_suffix = 'finetuning_mnist'
 
 # Directory paths with training suffix
 checkpoint_dir = f'./checkpoints_{training_suffix}'
