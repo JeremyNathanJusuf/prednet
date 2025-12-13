@@ -33,8 +33,8 @@ nb_epoch = 1000
 batch_size = 8
 num_workers = 4
 patience = 15
-init_lr = 5e-3
-latter_lr = 5e-4
+init_lr = 1e-4  # Lower LR for finetuning (was 5e-3, too high)
+latter_lr = 1e-5  # Lower final LR (was 5e-4)
 
 # Model Checkpointing
 num_save = 100
@@ -56,21 +56,17 @@ pixel_max = 1.0
 lstm_activation = 'relu'
 A_activation = 'relu'
 
-# Loss weights (4 layers to match pretrained architecture)
-# layer_loss_weights_array = np.array([1., .1, .1, .1])  # weighting for each layer in final loss
-layer_loss_weights_array = np.array([1., 0, 0, 0])
+layer_loss_weights_array = np.array([1., .1, .1, .1])  # weighting for each layer in final loss
+# layer_loss_weights_array = np.array([1., 0, 0, 0])
 time_loss_weights = 1./ (nt - 1) * np.ones(nt)  # equally weight all timesteps except the first
 time_loss_weights[0] = 0
 
-# Convert layer_loss_weights to torch tensor (will be moved to device in train.py)
 def get_layer_loss_weights(device):
-    """Returns layer loss weights as a torch tensor on the specified device."""
     return torch.tensor(np.expand_dims(layer_loss_weights_array, 1), device=device, dtype=torch.float32)
 
-# LR scheduler
 def get_lr_lambda(init_lr, latter_lr):
-    """Returns learning rate lambda function for scheduler."""
-    return lambda epoch: 1.0 if epoch < 4000 else (latter_lr / init_lr)
+    decay_epoch = 500
+    return lambda epoch: 1.0 if epoch < decay_epoch else (latter_lr / init_lr)
 
 # Evaluation parameters
 n_samples_eval = 10

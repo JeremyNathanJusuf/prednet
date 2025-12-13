@@ -180,13 +180,17 @@ def train():
 
 
 def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shape, global_step, epoch):
+    model.train()  # Set model to training mode
     total_error = 0.0
     print(f'Starting epoch: {epoch}')
     
     random_plot_step = random.randint(1, len(train_dataloader))
 
     for step, frames in enumerate(train_dataloader, start=1):
-        initial_states = model.get_initial_states(input_shape)
+        # Use actual batch size from frames, not hardcoded input_shape
+        batch_size_actual = frames.shape[0]
+        actual_input_shape = (batch_size_actual, input_shape[1], input_shape[2], input_shape[3])
+        initial_states = model.get_initial_states(actual_input_shape)
         
         output_list, hidden_states_list = model(frames.to(device), initial_states)
         error = 0.0
@@ -223,6 +227,7 @@ def train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, input_shap
 
 
 def val_one_epoch(val_dataloader, model, input_shape, global_step, epoch):
+    model.eval()  # Set model to evaluation mode
     total_error = 0.0
     print('Starting validation')
     
@@ -230,7 +235,10 @@ def val_one_epoch(val_dataloader, model, input_shape, global_step, epoch):
     
     with torch.no_grad(): 
         for step, frames in enumerate(val_dataloader, start=1):
-            initial_states = model.get_initial_states(input_shape)
+            # Use actual batch size from frames, not hardcoded input_shape
+            batch_size_actual = frames.shape[0]
+            actual_input_shape = (batch_size_actual, input_shape[1], input_shape[2], input_shape[3])
+            initial_states = model.get_initial_states(actual_input_shape)
             
             output_list, hidden_states_list = model(frames.to(device), initial_states)
             error = 0.0
