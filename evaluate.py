@@ -210,8 +210,13 @@ if __name__ == '__main__':
     
     data_path = config.val_path
 
-    evaluate_and_compare_to_baseline(
+    # evaluate_and_compare_to_baseline(
+    #     data_path=data_path,
+    #     extrap_time=8,
+    #     num_samples=5
+    # )
+    evaluate_and_plot(
         data_path=data_path,
-        extrap_time=8,
+        extrap_time=None,
         num_samples=5
     )

@@ -26,7 +26,8 @@ num_dilate_iterations = 1
 # Data paths
 mnist_raw_path = "./data/mnist_test_seq.npy"  # Raw MNIST sequence data (will be split into train/val)
 train_path = "./data/mnist_train.npy"  # Created by split_mnist_data
-val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
+# val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
+val_path = "./data/adapt/disappear_666_16_t8.npy"
 
 # Training parameters
 nb_epoch = 1000
@@ -70,7 +71,8 @@ def get_lr_lambda(init_lr, latter_lr):
 
 # Evaluation parameters
 n_samples_eval = 10
-model_path = './pretrained/preTrained_weights_forPyTorch.pkl'  # Use pretrained weights for evaluation
+# model_path = './pretrained/preTrained_weights_forPyTorch.pkl'  # Use pretrained weights for evaluation
+model_path = './checkpoints_finetuning_mnist/epoch_best_val.pth'
 
 # Finetuning
 is_finetuning = True

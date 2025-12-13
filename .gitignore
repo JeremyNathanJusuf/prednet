@@ -25,7 +25,7 @@ debug_*
 data
 custom_dataset
 eval_results
-eval_plots_mnist
+eval_plots_mnist*
 
 # Files
 test*.ipynb
@@ -35,3 +35,4 @@ train.sh
 evaluate.sh
 run_python*
 run.py
+temp*

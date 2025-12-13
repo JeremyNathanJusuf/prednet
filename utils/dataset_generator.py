@@ -489,6 +489,8 @@ class DisruptDatasetGenerator:
             video = self.generate_sudden_appear(i, min_scale, max_scale)
             appear_videos.append(video)
         appear_dataset = np.stack(appear_videos)
+        # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
+        appear_dataset = np.clip(appear_dataset * 255.0, 0, 255).astype(np.uint8)
         appear_path = f'./data/adapt/sudden_appear_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
         np.save(appear_path, appear_dataset)
         print(f"Saved: {appear_dataset.shape} to {appear_path}")
@@ -498,6 +500,8 @@ class DisruptDatasetGenerator:
             video = self.generate_transform(i, min_scale, max_scale)
             transform_videos.append(video)
         transform_dataset = np.stack(transform_videos)
+        # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
+        transform_dataset = np.clip(transform_dataset * 255.0, 0, 255).astype(np.uint8)
         transform_path = f'./data/adapt/transform_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
         np.save(transform_path, transform_dataset)
         print(f"Saved: {transform_dataset.shape} to {transform_path}")
@@ -507,6 +511,8 @@ class DisruptDatasetGenerator:
             video = self.generate_disappear(i, min_scale, max_scale)
             disappear_videos.append(video)
         disappear_dataset = np.stack(disappear_videos)
+        # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
+        disappear_dataset = np.clip(disappear_dataset * 255.0, 0, 255).astype(np.uint8)
         disappear_path = f'./data/adapt/disappear_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
         np.save(disappear_path, disappear_dataset)
         print(f"Saved: {disappear_dataset.shape} to {disappear_path}")
