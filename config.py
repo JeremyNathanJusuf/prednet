@@ -26,8 +26,11 @@ num_dilate_iterations = 1
 # Data paths
 mnist_raw_path = "./data/mnist_test_seq.npy"  # Raw MNIST sequence data (will be split into train/val)
 train_path = "./data/mnist_train.npy"  # Created by split_mnist_data
-# val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
-val_path = "./data/adapt/disappear_666_16_t8.npy"
+val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
+# val_path = "./data/adapt/transform_666_16_t8.npy"
+disrupt_sudden_appear_path = "./data/adapt/sudden_appear_2000_16_t8.npy"
+disrupt_sudden_transform_path = "./data/adapt/sudden_transform_2000_16_t8.npy"
+disrupt_sudden_disappear_path = "./data/adapt/sudden_disappear_2000_16_t8.npy"
 
 # Training parameters
 nb_epoch = 1000

@@ -482,38 +482,37 @@ class DisruptDatasetGenerator:
     
     def generate_dataset(self, num_samples, min_scale=1.5, max_scale=2.5):
         os.makedirs('./data/adapt', exist_ok=True)
-        samples_per_type = num_samples // 3
         
         appear_videos = []
-        for i in tqdm(range(samples_per_type), desc="Generating sudden appear"):
+        for i in tqdm(range(num_samples), desc="Generating sudden appear"):
             video = self.generate_sudden_appear(i, min_scale, max_scale)
             appear_videos.append(video)
         appear_dataset = np.stack(appear_videos)
         # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
         appear_dataset = np.clip(appear_dataset * 255.0, 0, 255).astype(np.uint8)
-        appear_path = f'./data/adapt/sudden_appear_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
+        appear_path = f'./data/adapt/sudden_appear_{num_samples}_{self.nt}_t{self.disruption_time}.npy'
         np.save(appear_path, appear_dataset)
         print(f"Saved: {appear_dataset.shape} to {appear_path}")
         
         transform_videos = []
-        for i in tqdm(range(samples_per_type), desc="Generating transform"):
+        for i in tqdm(range(num_samples), desc="Generating transform"):
             video = self.generate_transform(i, min_scale, max_scale)
             transform_videos.append(video)
         transform_dataset = np.stack(transform_videos)
         # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
         transform_dataset = np.clip(transform_dataset * 255.0, 0, 255).astype(np.uint8)
-        transform_path = f'./data/adapt/transform_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
+        transform_path = f'./data/adapt/sudden_transform_{num_samples}_{self.nt}_t{self.disruption_time}.npy'
         np.save(transform_path, transform_dataset)
         print(f"Saved: {transform_dataset.shape} to {transform_path}")
         
         disappear_videos = []
-        for i in tqdm(range(samples_per_type), desc="Generating disappear"):
+        for i in tqdm(range(num_samples), desc="Generating disappear"):
             video = self.generate_disappear(i, min_scale, max_scale)
             disappear_videos.append(video)
         disappear_dataset = np.stack(disappear_videos)
         # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
         disappear_dataset = np.clip(disappear_dataset * 255.0, 0, 255).astype(np.uint8)
-        disappear_path = f'./data/adapt/disappear_{samples_per_type}_{self.nt}_t{self.disruption_time}.npy'
+        disappear_path = f'./data/adapt/sudden_disappear_{num_samples}_{self.nt}_t{self.disruption_time}.npy'
         np.save(disappear_path, disappear_dataset)
         print(f"Saved: {disappear_dataset.shape} to {disappear_path}")
         
