@@ -461,7 +461,7 @@ class DisruptDatasetGenerator:
             frame[y_start_frame:y_end_frame, x_start_frame:x_end_frame], visible)
         return frame
     
-    def generate_sudden_appear(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None):
+    def generate_sudden_appear(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None, return_params=False):
         base = self._get_base_video(video_idx)
         if nt is None:
             nt = self.nt
@@ -480,9 +480,12 @@ class DisruptDatasetGenerator:
                 current_pos = pos + velocity * (t - self.disruption_time)
                 frame = self._overlay_digit(frame, digit, scale, current_pos)
             video[t, 0] = frame
+        
+        if return_params:
+            return video, (digit, scale, velocity, pos)
         return video
     
-    def generate_transform(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None):
+    def generate_transform(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None, return_params=False):
         base = self._get_base_video(video_idx)
         if nt is None:
             nt = self.nt
@@ -502,9 +505,12 @@ class DisruptDatasetGenerator:
             digit = digit2 if t >= self.disruption_time else digit1
             frame = self._overlay_digit(frame, digit, scale, current_pos)
             video[t, 0] = frame
+        
+        if return_params:
+            return video, (digit1, scale, velocity, pos)
         return video
     
-    def generate_disappear(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None):
+    def generate_disappear(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None, return_params=False):
         base = self._get_base_video(video_idx)
         if nt is None:
             nt = self.nt
@@ -523,38 +529,229 @@ class DisruptDatasetGenerator:
                 current_pos = pos + velocity * t
                 frame = self._overlay_digit(frame, digit, scale, current_pos)
             video[t, 0] = frame
+        
+        if return_params:
+            return video, (digit, scale, velocity, pos)
         return video
     
-    def generate_dataset(self, num_samples, min_scale=1.5, max_scale=2.5, nt=None):
+    def generate_sudden_appear_val(self, video_idx, digit, scale, velocity, pos, min_scale=1.5, max_scale=2.5, nt=None):
+        """Generate validation version: digit appears from t=0 (no disruption).
+        
+        Args:
+            pos: Position at disruption_time (from disrupt version)
+            For val version, we need to back-calculate initial position so digit
+            is at pos at disruption_time, meaning initial_pos = pos - velocity * disruption_time
+        """
+        base = self._get_base_video(video_idx)
         if nt is None:
             nt = self.nt
+        else:
+            base = base[:nt]
+        
+        # Back-calculate initial position so digit is at pos at disruption_time
+        initial_pos = pos - velocity * self.disruption_time
+        
+        video = np.zeros((nt, 1, self.h, self.w), dtype=np.float32)
+        for t in range(nt):
+            frame = base[t].copy()
+            # Digit is present from t=0 (no disruption)
+            current_pos = initial_pos + velocity * t
+            frame = self._overlay_digit(frame, digit, scale, current_pos)
+            video[t, 0] = frame
+        return video
+    
+    def generate_transform_val(self, video_idx, digit1, scale, velocity, pos, min_scale=1.5, max_scale=2.5, nt=None):
+        """Generate validation version: digit1 stays throughout (no transformation)."""
+        base = self._get_base_video(video_idx)
+        if nt is None:
+            nt = self.nt
+        else:
+            base = base[:nt]
+        
+        video = np.zeros((nt, 1, self.h, self.w), dtype=np.float32)
+        for t in range(nt):
+            frame = base[t].copy()
+            # Use digit1 throughout (no transformation)
+            current_pos = pos + velocity * t
+            frame = self._overlay_digit(frame, digit1, scale, current_pos)
+            video[t, 0] = frame
+        return video
+    
+    def generate_disappear_val(self, video_idx, digit, scale, velocity, pos, min_scale=1.5, max_scale=2.5, nt=None):
+        """Generate validation version: digit stays throughout (no disappearance)."""
+        base = self._get_base_video(video_idx)
+        if nt is None:
+            nt = self.nt
+        else:
+            base = base[:nt]
+        
+        video = np.zeros((nt, 1, self.h, self.w), dtype=np.float32)
+        for t in range(nt):
+            frame = base[t].copy()
+            # Digit stays throughout (no disappearance)
+            current_pos = pos + velocity * t
+            frame = self._overlay_digit(frame, digit, scale, current_pos)
+            video[t, 0] = frame
+        return video
+    
+    def generate_dataset(self, num_samples, min_scale=1.5, max_scale=2.5, nt=None, 
+                        min_digits=2, max_digits=5, h=None, w=None):
+        """
+        Generate disruption datasets and a single base validation set.
+        All disruption types use the same base videos and additional digits.
+        
+        Args:
+            num_samples: Number of videos to generate
+            min_scale, max_scale: Scale range for disruption digits
+            nt: Number of timesteps
+            min_digits, max_digits: Total number of digits (base has 2, so adds 0-3 more)
+            h, w: Target height and width (defaults to self.h, self.w)
+        """
+        if nt is None:
+            nt = self.nt
+        target_h = h if h is not None else self.h
+        target_w = w if w is not None else self.w
         
         os.makedirs('./data/adapt', exist_ok=True)
         
+        # Step 1: Generate base validation videos with additional digits (no disruptions)
+        # This will be shared by all disruption types
+        print("Step 1: Generating base validation videos with additional digits...")
+        base_val_videos = []
+        disruption_params = []  # Store disruption parameters for each video
+        
+        for i in tqdm(range(num_samples), desc="Generating base videos"):
+            base_video = self._get_base_video(i)
+            if nt is not None and base_video.shape[0] > nt:
+                base_video = base_video[:nt]
+            
+            # Resize base if needed
+            if target_h != self.h or target_w != self.w:
+                resized_base = np.zeros((nt, target_h, target_w), dtype=np.float32)
+                for t in range(nt):
+                    resized_base[t] = cv2.resize(base_video[t], (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+                base_video = resized_base
+            
+            # Generate additional digits (0 to max_digits-2 additional, since base has 2)
+            n_additional = np.random.randint(0, max(1, max_digits - 1))  # 0 to (max_digits-1) additional
+            
+            additional_digits = []
+            for _ in range(n_additional):
+                digit_add, scale_add, velocity_add, pos_add = self._init_new_digit_with_multi_iou_check(
+                    base_video, additional_digits, min_scale, max_scale,
+                    start_time=0, end_time=nt, h=target_h, w=target_w
+                )
+                additional_digits.append((digit_add, scale_add, velocity_add, pos_add))
+            
+            # Create base validation video with additional digits
+            val_video = np.zeros((nt, 1, target_h, target_w), dtype=np.float32)
+            for t in range(nt):
+                frame = base_video[t].copy()
+                # Add all additional digits
+                for digit_add, scale_add, velocity_add, pos_add in additional_digits:
+                    current_pos = pos_add + velocity_add * t
+                    frame = self._overlay_digit(frame, digit_add, scale_add, current_pos, h=target_h, w=target_w)
+                val_video[t, 0] = frame
+            
+            base_val_videos.append(val_video)
+            
+            # Generate disruption parameters for each type (will be applied to base_val_video)
+            # For appear: digit appears at disruption_time
+            digit_appear, scale_appear, velocity_appear, pos_appear = self._init_new_digit_with_iou_check(
+                base_video, min_scale, max_scale,
+                start_time=self.disruption_time, end_time=nt
+            )
+            
+            # For transform: digit1 from start, transforms to digit2 at disruption_time
+            digit1_transform, scale_transform, velocity_transform, pos_transform = self._init_new_digit_with_iou_check(
+                base_video, min_scale, max_scale,
+                start_time=0, end_time=nt
+            )
+            digit2_transform = self._get_random_digit()
+            
+            # For disappear: digit from start, disappears at disruption_time
+            digit_disappear, scale_disappear, velocity_disappear, pos_disappear = self._init_new_digit_with_iou_check(
+                base_video, min_scale, max_scale,
+                start_time=0, end_time=self.disruption_time
+            )
+            
+            disruption_params.append({
+                'appear': (digit_appear, scale_appear, velocity_appear, pos_appear),
+                'transform': (digit1_transform, digit2_transform, scale_transform, velocity_transform, pos_transform),
+                'disappear': (digit_disappear, scale_disappear, velocity_disappear, pos_disappear),
+                'additional_digits': additional_digits
+            })
+        
+        # Save base validation dataset
+        base_val_dataset = np.stack(base_val_videos)
+        base_val_dataset = np.clip(base_val_dataset * 255.0, 0, 255).astype(np.uint8)
+        base_val_path = './data/adapt/mnist_val_disrupt_base.npy'
+        np.save(base_val_path, base_val_dataset)
+        print(f"Saved base validation: {base_val_dataset.shape} to {base_val_path}")
+        
+        # Step 2: Generate disruption datasets using the same base videos and additional digits
+        print("\nStep 2: Generating disruption datasets...")
+        
+        # Generate sudden appear datasets
         appear_videos = []
         for i in tqdm(range(num_samples), desc="Generating sudden appear"):
-            video = self.generate_sudden_appear(i, min_scale, max_scale, nt=nt)
+            # Start from base validation video (has base + additional digits)
+            video = base_val_videos[i].copy()
+            digit, scale, velocity, pos = disruption_params[i]['appear']
+            additional_digits = disruption_params[i]['additional_digits']
+            
+            # Add disruption: digit appears at disruption_time
+            for t in range(nt):
+                if t >= self.disruption_time:
+                    current_pos = pos + velocity * (t - self.disruption_time)
+                    video[t, 0] = self._overlay_digit(video[t, 0].copy(), digit, scale, current_pos, h=target_h, w=target_w)
+            
             appear_videos.append(video)
+        
         appear_dataset = np.stack(appear_videos)
         appear_dataset = np.clip(appear_dataset * 255.0, 0, 255).astype(np.uint8)
         appear_path = f'./data/adapt/sudden_appear_{num_samples}_{nt}_t{self.disruption_time}.npy'
         np.save(appear_path, appear_dataset)
         print(f"Saved: {appear_dataset.shape} to {appear_path}")
         
+        # Generate transform datasets
         transform_videos = []
         for i in tqdm(range(num_samples), desc="Generating transform"):
-            video = self.generate_transform(i, min_scale, max_scale, nt=nt)
+            # Start from base validation video
+            video = base_val_videos[i].copy()
+            digit1, digit2, scale, velocity, pos = disruption_params[i]['transform']
+            additional_digits = disruption_params[i]['additional_digits']
+            
+            # Add disruption: digit transforms from digit1 to digit2 at disruption_time
+            for t in range(nt):
+                current_pos = pos + velocity * t
+                digit = digit2 if t >= self.disruption_time else digit1
+                video[t, 0] = self._overlay_digit(video[t, 0].copy(), digit, scale, current_pos, h=target_h, w=target_w)
+            
             transform_videos.append(video)
+        
         transform_dataset = np.stack(transform_videos)
         transform_dataset = np.clip(transform_dataset * 255.0, 0, 255).astype(np.uint8)
         transform_path = f'./data/adapt/sudden_transform_{num_samples}_{nt}_t{self.disruption_time}.npy'
         np.save(transform_path, transform_dataset)
         print(f"Saved: {transform_dataset.shape} to {transform_path}")
         
+        # Generate disappear datasets
         disappear_videos = []
         for i in tqdm(range(num_samples), desc="Generating disappear"):
-            video = self.generate_disappear(i, min_scale, max_scale, nt=nt)
+            # Start from base validation video
+            video = base_val_videos[i].copy()
+            digit, scale, velocity, pos = disruption_params[i]['disappear']
+            additional_digits = disruption_params[i]['additional_digits']
+            
+            # Add disruption: digit disappears at disruption_time
+            for t in range(nt):
+                if t < self.disruption_time:
+                    current_pos = pos + velocity * t
+                    video[t, 0] = self._overlay_digit(video[t, 0].copy(), digit, scale, current_pos, h=target_h, w=target_w)
+            
             disappear_videos.append(video)
+        
         disappear_dataset = np.stack(disappear_videos)
         disappear_dataset = np.clip(disappear_dataset * 255.0, 0, 255).astype(np.uint8)
         disappear_path = f'./data/adapt/sudden_disappear_{num_samples}_{nt}_t{self.disruption_time}.npy'
@@ -564,7 +761,8 @@ class DisruptDatasetGenerator:
         return {
             'sudden_appear': (appear_dataset, appear_path),
             'transform': (transform_dataset, transform_path),
-            'disappear': (disappear_dataset, disappear_path)
+            'disappear': (disappear_dataset, disappear_path),
+            'base_val': (base_val_dataset, base_val_path)
         }
     
     def _check_trajectory_iou_multi(self, base_video, existing_digits, digit, scale, velocity, init_pos, start_time, end_time, h=None, w=None):

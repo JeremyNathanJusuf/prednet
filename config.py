@@ -33,6 +33,7 @@ val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
 disrupt_sudden_appear_path = "./data/adapt/sudden_appear_2000_16_t8.npy"
 disrupt_sudden_transform_path = "./data/adapt/sudden_transform_2000_16_t8.npy"
 disrupt_sudden_disappear_path = "./data/adapt/sudden_disappear_2000_16_t8.npy"
+disrupt_base_path = "./data/adapt/mnist_val_disrupt_base.npy"
 
 # Training parameters
 nb_epoch = 1000
