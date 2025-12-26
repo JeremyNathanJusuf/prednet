@@ -149,19 +149,21 @@ class Prednet(nn.Module):
         #   'A': A_list,
         #   'Ahat': Ahat_list,
         #   'frame_prediction': frame_prediction,
-        #   'timestep': timestep
+        #   'timestep': timestep,
+        #   'A_gt': A_gt (ground truth for error calculation)
         # }
         R_current = states['R']
         E_current = states['E']
         c_current = states['c']
         
+        A_gt = A
         if self.extrap_time:
             timestep = states['timestep']
             frame_prediction = states['frame_prediction']
             if timestep >= self.extrap_time:
                 A = frame_prediction
                 
-        R_list, E_list, c_list, A_list, Ahat_list = [], [], [], [A], []
+        R_list, E_list, c_list, A_list, Ahat_list = [], [], [], [A_gt], []
         R_upper = None
 
         # Top down pass

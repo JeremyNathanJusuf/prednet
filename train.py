@@ -134,7 +134,7 @@ def train():
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     if is_finetuning:
-        model, optimizer, lr_scheduler = load_model(model, model_checkpoint_path, device, optimizer, lr_scheduler, load_optimizer=False)
+        model, optimizer, lr_scheduler = load_model(model, model_checkpoint_path, device, optimizer, lr_scheduler, load_optimizer=True)
 
     global_step = 1
     

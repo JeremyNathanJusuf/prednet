@@ -306,16 +306,34 @@ class MovingMnistDatasetGenerator():
         return dataset, save_path
     
 class DisruptDatasetGenerator:
-    def __init__(self, base_data_path, disruption_time, max_iou=0.3):
-        self.base_videos = np.load(base_data_path)  # (num_videos, nt, 1, h, w) uint8
-        self.num_base_videos, self.nt, _, self.h, self.w = self.base_videos.shape
+    def __init__(self, base_data_path, disruption_time, max_iou=0.3, target_h=128, target_w=160):
+        self.base_videos = np.load(base_data_path)
+        if len(self.base_videos.shape) == 4:
+            if self.base_videos.shape[0] == 20:
+                self.base_videos = np.transpose(self.base_videos, [1, 0, 2, 3])
+            self.num_base_videos, self.nt, original_h, original_w = self.base_videos.shape
+            self.base_videos = self.base_videos[:, :, np.newaxis, :, :]
+        else:
+            self.num_base_videos, self.nt, _, original_h, original_w = self.base_videos.shape
+        
+        # Set target dimensions (will resize base videos to these dimensions)
+        self.target_h = target_h
+        self.target_w = target_w
+        self.h = target_h  # Use target dimensions for all operations
+        self.w = target_w
+        
+        # Check if resizing is needed
+        self.needs_resize = (original_h != target_h) or (original_w != target_w)
+        
         self.disruption_time = disruption_time
-        self.max_iou = max_iou  # Maximum allowed IOU between new digit and base content
+        self.max_iou = max_iou
         
         mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transforms.ToTensor())
         self.mnist_digits = [img.numpy().squeeze() for img, _ in mnist_dataset]
         
         print(f"Loaded {self.num_base_videos} base videos with shape: {self.base_videos.shape}")
+        if self.needs_resize:
+            print(f"Base videos will be resized from ({original_h}, {original_w}) to ({target_h}, {target_w})")
 
         
     def _get_random_digit(self):
@@ -323,20 +341,32 @@ class DisruptDatasetGenerator:
     
     def _get_base_video(self, idx):
         video = self.base_videos[idx % self.num_base_videos]  # (nt, 1, h, w) uint8
-        return video[:, 0, :, :].astype(np.float32) / 255.0  # (nt, h, w) float32 [0,1]
+        video = video[:, 0, :, :].astype(np.float32) / 255.0  # (nt, h, w) float32 [0,1]
+        
+        # Resize to target dimensions if needed
+        if self.needs_resize:
+            nt = video.shape[0]
+            resized_video = np.zeros((nt, self.target_h, self.target_w), dtype=np.float32)
+            for t in range(nt):
+                resized_video[t] = cv2.resize(video[t], (self.target_w, self.target_h), interpolation=cv2.INTER_LINEAR)
+            video = resized_video
+        
+        return video  # (nt, target_h, target_w) float32 [0,1]
     
-    def _get_digit_mask(self, digit, scale, pos):
+    def _get_digit_mask(self, digit, scale, pos, h=None, w=None):
         """Get a binary mask for the digit at given position."""
         x, y = int(pos[0]), int(pos[1])
         digit_size = int(28 * scale)
         resized = cv2.resize(digit, (digit_size, digit_size), interpolation=cv2.INTER_LINEAR)
         
-        mask = np.zeros((self.h, self.w), dtype=np.float32)
+        mask_h = h if h is not None else self.h
+        mask_w = w if w is not None else self.w
+        mask = np.zeros((mask_h, mask_w), dtype=np.float32)
         
         x_start_frame = max(0, x)
         y_start_frame = max(0, y)
-        x_end_frame = min(self.w, x + digit_size)
-        y_end_frame = min(self.h, y + digit_size)
+        x_end_frame = min(mask_w, x + digit_size)
+        y_end_frame = min(mask_h, y + digit_size)
         
         x_start_digit = max(0, -x)
         y_start_digit = max(0, -y)
@@ -405,15 +435,18 @@ class DisruptDatasetGenerator:
                        np.random.randint(0, max(1, self.h - digit_size))], dtype=float)
         return digit, scale, velocity, pos
     
-    def _overlay_digit(self, frame, digit, scale, pos):
+    def _overlay_digit(self, frame, digit, scale, pos, h=None, w=None):
         x, y = int(pos[0]), int(pos[1])
         digit_size = int(28 * scale)
         resized = cv2.resize(digit, (digit_size, digit_size), interpolation=cv2.INTER_LINEAR)
         
+        frame_h = h if h is not None else self.h
+        frame_w = w if w is not None else self.w
+        
         x_start_frame = max(0, x)
         y_start_frame = max(0, y)
-        x_end_frame = min(self.w, x + digit_size)
-        y_end_frame = min(self.h, y + digit_size)
+        x_end_frame = min(frame_w, x + digit_size)
+        y_end_frame = min(frame_h, y + digit_size)
         
         x_start_digit = max(0, -x)
         y_start_digit = max(0, -y)
@@ -428,16 +461,20 @@ class DisruptDatasetGenerator:
             frame[y_start_frame:y_end_frame, x_start_frame:x_end_frame], visible)
         return frame
     
-    def generate_sudden_appear(self, video_idx, min_scale=1.5, max_scale=2.5):
-        base = self._get_base_video(video_idx)  # (nt, h, w)
-        # Check IOU from disruption_time to end
+    def generate_sudden_appear(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None):
+        base = self._get_base_video(video_idx)
+        if nt is None:
+            nt = self.nt
+        else:
+            base = base[:nt]
+        
         digit, scale, velocity, pos = self._init_new_digit_with_iou_check(
             base, min_scale, max_scale, 
-            start_time=self.disruption_time, end_time=self.nt
+            start_time=self.disruption_time, end_time=nt
         )
         
-        video = np.zeros((self.nt, 1, self.h, self.w), dtype=np.float32)
-        for t in range(self.nt):
+        video = np.zeros((nt, 1, self.h, self.w), dtype=np.float32)
+        for t in range(nt):
             frame = base[t].copy()
             if t >= self.disruption_time:
                 current_pos = pos + velocity * (t - self.disruption_time)
@@ -445,17 +482,21 @@ class DisruptDatasetGenerator:
             video[t, 0] = frame
         return video
     
-    def generate_transform(self, video_idx, min_scale=1.5, max_scale=2.5):
+    def generate_transform(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None):
         base = self._get_base_video(video_idx)
-        # Check IOU for entire video (digit present from start)
+        if nt is None:
+            nt = self.nt
+        else:
+            base = base[:nt]
+        
         digit1, scale, velocity, pos = self._init_new_digit_with_iou_check(
             base, min_scale, max_scale,
-            start_time=0, end_time=self.nt
+            start_time=0, end_time=nt
         )
         digit2 = self._get_random_digit()
         
-        video = np.zeros((self.nt, 1, self.h, self.w), dtype=np.float32)
-        for t in range(self.nt):
+        video = np.zeros((nt, 1, self.h, self.w), dtype=np.float32)
+        for t in range(nt):
             frame = base[t].copy()
             current_pos = pos + velocity * t
             digit = digit2 if t >= self.disruption_time else digit1
@@ -463,16 +504,20 @@ class DisruptDatasetGenerator:
             video[t, 0] = frame
         return video
     
-    def generate_disappear(self, video_idx, min_scale=1.5, max_scale=2.5):
+    def generate_disappear(self, video_idx, min_scale=1.5, max_scale=2.5, nt=None):
         base = self._get_base_video(video_idx)
-        # Check IOU from start to disruption_time
+        if nt is None:
+            nt = self.nt
+        else:
+            base = base[:nt]
+        
         digit, scale, velocity, pos = self._init_new_digit_with_iou_check(
             base, min_scale, max_scale,
             start_time=0, end_time=self.disruption_time
         )
         
-        video = np.zeros((self.nt, 1, self.h, self.w), dtype=np.float32)
-        for t in range(self.nt):
+        video = np.zeros((nt, 1, self.h, self.w), dtype=np.float32)
+        for t in range(nt):
             frame = base[t].copy()
             if t < self.disruption_time:
                 current_pos = pos + velocity * t
@@ -480,39 +525,39 @@ class DisruptDatasetGenerator:
             video[t, 0] = frame
         return video
     
-    def generate_dataset(self, num_samples, min_scale=1.5, max_scale=2.5):
+    def generate_dataset(self, num_samples, min_scale=1.5, max_scale=2.5, nt=None):
+        if nt is None:
+            nt = self.nt
+        
         os.makedirs('./data/adapt', exist_ok=True)
         
         appear_videos = []
         for i in tqdm(range(num_samples), desc="Generating sudden appear"):
-            video = self.generate_sudden_appear(i, min_scale, max_scale)
+            video = self.generate_sudden_appear(i, min_scale, max_scale, nt=nt)
             appear_videos.append(video)
         appear_dataset = np.stack(appear_videos)
-        # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
         appear_dataset = np.clip(appear_dataset * 255.0, 0, 255).astype(np.uint8)
-        appear_path = f'./data/adapt/sudden_appear_{num_samples}_{self.nt}_t{self.disruption_time}.npy'
+        appear_path = f'./data/adapt/sudden_appear_{num_samples}_{nt}_t{self.disruption_time}.npy'
         np.save(appear_path, appear_dataset)
         print(f"Saved: {appear_dataset.shape} to {appear_path}")
         
         transform_videos = []
         for i in tqdm(range(num_samples), desc="Generating transform"):
-            video = self.generate_transform(i, min_scale, max_scale)
+            video = self.generate_transform(i, min_scale, max_scale, nt=nt)
             transform_videos.append(video)
         transform_dataset = np.stack(transform_videos)
-        # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
         transform_dataset = np.clip(transform_dataset * 255.0, 0, 255).astype(np.uint8)
-        transform_path = f'./data/adapt/sudden_transform_{num_samples}_{self.nt}_t{self.disruption_time}.npy'
+        transform_path = f'./data/adapt/sudden_transform_{num_samples}_{nt}_t{self.disruption_time}.npy'
         np.save(transform_path, transform_dataset)
         print(f"Saved: {transform_dataset.shape} to {transform_path}")
         
         disappear_videos = []
         for i in tqdm(range(num_samples), desc="Generating disappear"):
-            video = self.generate_disappear(i, min_scale, max_scale)
+            video = self.generate_disappear(i, min_scale, max_scale, nt=nt)
             disappear_videos.append(video)
         disappear_dataset = np.stack(disappear_videos)
-        # Convert from float32 [0,1] to uint8 [0,255] to match dataloader expectations
         disappear_dataset = np.clip(disappear_dataset * 255.0, 0, 255).astype(np.uint8)
-        disappear_path = f'./data/adapt/sudden_disappear_{num_samples}_{self.nt}_t{self.disruption_time}.npy'
+        disappear_path = f'./data/adapt/sudden_disappear_{num_samples}_{nt}_t{self.disruption_time}.npy'
         np.save(disappear_path, disappear_dataset)
         print(f"Saved: {disappear_dataset.shape} to {disappear_path}")
         
@@ -521,6 +566,106 @@ class DisruptDatasetGenerator:
             'transform': (transform_dataset, transform_path),
             'disappear': (disappear_dataset, disappear_path)
         }
+    
+    def _check_trajectory_iou_multi(self, base_video, existing_digits, digit, scale, velocity, init_pos, start_time, end_time, h=None, w=None):
+        mask_h = h if h is not None else self.h
+        mask_w = w if w is not None else self.w
+        
+        for t in range(start_time, end_time):
+            current_pos = init_pos + velocity * (t - start_time)
+            digit_mask = self._get_digit_mask(digit, scale, current_pos, h=mask_h, w=mask_w)
+            base_mask = base_video[t] > 0.1
+            
+            combined_mask = base_mask.copy()
+            for existing_digit, existing_scale, existing_velocity, existing_pos in existing_digits:
+                existing_current_pos = existing_pos + existing_velocity * (t - start_time)
+                existing_mask = self._get_digit_mask(existing_digit, existing_scale, existing_current_pos, h=mask_h, w=mask_w)
+                combined_mask = np.logical_or(combined_mask, existing_mask)
+            
+            iou = self._compute_iou(digit_mask, combined_mask)
+            if iou > self.max_iou:
+                return False, iou
+        return True, 0.0
+    
+    def _init_new_digit_with_multi_iou_check(self, base_video, existing_digits, min_scale, max_scale, start_time, end_time, h=None, w=None, max_attempts=50):
+        mask_h = h if h is not None else self.h
+        mask_w = w if w is not None else self.w
+        
+        for attempt in range(max_attempts):
+            digit = self._get_random_digit()
+            scale = np.random.uniform(min_scale, max_scale)
+            velocity = np.random.randint(-4, 5, size=2)
+            digit_size = int(28 * scale)
+            
+            pos = np.array([np.random.randint(0, max(1, mask_w - digit_size)),
+                           np.random.randint(0, max(1, mask_h - digit_size))], dtype=float)
+            
+            valid, max_iou_found = self._check_trajectory_iou_multi(
+                base_video, existing_digits, digit, scale, velocity, pos, start_time, end_time, h=mask_h, w=mask_w
+            )
+            
+            if valid:
+                return digit, scale, velocity, pos
+        
+        return digit, scale, velocity, pos
+    
+    def generate_multi_digit_video(self, video_idx, min_digits=2, max_digits=5, min_scale=1.5, max_scale=2.5, nt=None, h=None, w=None):
+        base = self._get_base_video(video_idx)
+        if nt is None:
+            nt = self.nt
+        else:
+            base = base[:nt]
+        
+        target_h = h if h is not None else self.h
+        target_w = w if w is not None else self.w
+        
+        if target_h != self.h or target_w != self.w:
+            resized_base = np.zeros((nt, target_h, target_w), dtype=np.float32)
+            for t in range(nt):
+                resized_base[t] = cv2.resize(base[t], (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+            base = resized_base
+        
+        n_additional = np.random.randint(max(0, min_digits - 2), max_digits - 2 + 1)
+        
+        additional_digits = []
+        for _ in range(n_additional):
+            digit, scale, velocity, pos = self._init_new_digit_with_multi_iou_check(
+                base, additional_digits, min_scale, max_scale, start_time=0, end_time=nt, h=target_h, w=target_w
+            )
+            additional_digits.append((digit, scale, velocity, pos))
+        
+        video = np.zeros((nt, 1, target_h, target_w), dtype=np.float32)
+        for t in range(nt):
+            frame = base[t].copy()
+            
+            for digit, scale, velocity, pos in additional_digits:
+                current_pos = pos + velocity * t
+                frame = self._overlay_digit(frame, digit, scale, current_pos, h=target_h, w=target_w)
+            
+            video[t, 0] = frame
+        return video
+    
+    def generate_multi_digit_dataset(self, num_samples, min_digits=2, max_digits=5, min_scale=1.5, max_scale=2.5, nt=None, h=None, w=None):
+        if nt is None:
+            nt = self.nt
+        target_h = h if h is not None else self.h
+        target_w = w if w is not None else self.w
+        
+        os.makedirs('./data', exist_ok=True)
+        
+        videos = []
+        for i in tqdm(range(num_samples), desc="Generating multi-digit videos"):
+            video = self.generate_multi_digit_video(i, min_digits, max_digits, min_scale, max_scale, nt=nt, h=target_h, w=target_w)
+            videos.append(video)
+        
+        dataset = np.stack(videos)
+        dataset = np.clip(dataset * 255.0, 0, 255).astype(np.uint8)
+        
+        save_path = f'./data/multi_digit_{num_samples}_{nt}_d{min_digits}-{max_digits}.npy'
+        np.save(save_path, dataset)
+        print(f"Saved: {dataset.shape} to {save_path}")
+        
+        return dataset, save_path
 
 
 if __name__ == '__main__':

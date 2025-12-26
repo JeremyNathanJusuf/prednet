@@ -10,7 +10,7 @@ import torch
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training name
-training_suffix = 'finetuning_mnist'
+training_suffix = 'finetuning_mnist_extrap'
 
 # Directory paths with training suffix
 checkpoint_dir = f'./checkpoints_{training_suffix}'
@@ -24,10 +24,12 @@ max_scale = 2.3
 num_dilate_iterations = 1
 
 # Data paths
-mnist_raw_path = "./data/mnist_test_seq.npy"  # Raw MNIST sequence data (will be split into train/val)
+mnist_raw_path = "./data/multi_digit_10000_16_d2-5.npy"  # Raw MNIST sequence data (will be split into train/val)
+# train_path = "./data/mnist_train_multi.npy"  # Created by split_mnist_data
+# val_path = "./data/mnist_val_multi.npy"  # Created by split_mnist_data
 train_path = "./data/mnist_train.npy"  # Created by split_mnist_data
 val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
-# val_path = "./data/adapt/transform_666_16_t8.npy"
+
 disrupt_sudden_appear_path = "./data/adapt/sudden_appear_2000_16_t8.npy"
 disrupt_sudden_transform_path = "./data/adapt/sudden_transform_2000_16_t8.npy"
 disrupt_sudden_disappear_path = "./data/adapt/sudden_disappear_2000_16_t8.npy"
@@ -75,13 +77,14 @@ def get_lr_lambda(init_lr, latter_lr):
 # Evaluation parameters
 n_samples_eval = 10
 # model_path = './pretrained/preTrained_weights_forPyTorch.pkl'  # Use pretrained weights for evaluation
-model_path = './checkpoints_finetuning_mnist/epoch_best_val.pth'
+model_path = './checkpoints_finetuning_mnist_3/epoch_best_val.pth'
 
 # Finetuning
 is_finetuning = True
-extrap_time = None
+extrap_time = 8
 # Use pretrained KITTI weights for finetuning on new data
-pretrained_weights_path = './pretrained/preTrained_weights_forPyTorch.pkl'
+# pretrained_weights_path = './pretrained/preTrained_weights_forPyTorch.pkl'
+pretrained_weights_path = './checkpoints_finetuning_mnist_3/epoch_best_val.pth'
 model_checkpoint_path = pretrained_weights_path  # Path to checkpoint/pretrained weights for finetuning  
 
 

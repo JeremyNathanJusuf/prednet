@@ -35,7 +35,7 @@ def plot_comparison(gt_frames, model_pred_frames, naive_pred_frames, batch_idx, 
     nt = gt.shape[0]
     
     # Create figure with 3 rows: ground truth, model predictions, naive predictions
-    fig, axes = plt.subplots(3, nt, figsize=(2.5*nt, 7))
+    fig, axes = plt.subplots(3, nt, figsize=(2.5*nt, 7.5))
     
     row_data = [
         (gt, 'Ground Truth', 'GT'),
@@ -235,4 +235,3 @@ def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train
         plot_layer(hidden_states_list, frames, 'E', output_dir, batch_idx)
         
         plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx)
-    

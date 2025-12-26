@@ -32,7 +32,7 @@ A_activation = config.A_activation
 model_path = config.model_path
 
 
-def get_model_and_dataloader(data_path, extrap_time=None):
+def get_model_and_dataloader(data_path, model_path, extrap_time=None):
     dataloader = MNISTDataloader(
         data_path=data_path,
         batch_size=batch_size, 
@@ -62,14 +62,15 @@ def get_model_and_dataloader(data_path, extrap_time=None):
     return model, dataloader
 
 
-def evaluate_and_plot(data_path, extrap_time=4, num_samples=5):
+def evaluate_and_plot(data_path, model_path, extrap_time=4, num_samples=5):
     print(f"\nEvaluating MNIST dataset:")
     print(f"  Data path: {data_path}")
+    print(f"  Model path: {model_path}")
     print(f"  Model extrapolation time: {extrap_time}")
     print(f"  Number of samples to plot: {num_samples}")
     print("="*60)
     
-    model, dataloader = get_model_and_dataloader(data_path, extrap_time=extrap_time)
+    model, dataloader = get_model_and_dataloader(data_path, model_path, extrap_time=extrap_time)
     
     plot_count = 0
     
@@ -106,15 +107,26 @@ def evaluate_and_plot(data_path, extrap_time=4, num_samples=5):
     print(f"Evaluation complete! Generated {plot_count} plots.")
     print(f"Plots saved to: ./eval_plots_mnist/")
     print("="*60)
+
+
+def evaluate_and_compare_to_baseline(data_path, model_path, extrap_time=4, num_samples=5):
+    """
+    Evaluate model against naive baseline (repeating last frame before extrapolation).
     
-def evaluate_and_compare_to_baseline(data_path, extrap_time=4, num_samples=5):
-    model, dataloader = get_model_and_dataloader(data_path, extrap_time=extrap_time)
+    Args:
+        data_path: Path to evaluation data
+        model_path: Path to model checkpoint
+        extrap_time: Timestep where extrapolation begins
+        num_samples: Number of samples to plot
+    """
+    model, dataloader = get_model_and_dataloader(data_path, model_path, extrap_time=extrap_time)
     
     plot_count = 0
     total_naive_l1_error = 0
     total_naive_l2_error = 0
     total_naive_psnr = 0
     total_naive_ssim = 0
+    
     total_model_l1_error = 0
     total_model_l2_error = 0
     total_model_psnr = 0
@@ -140,9 +152,10 @@ def evaluate_and_compare_to_baseline(data_path, extrap_time=4, num_samples=5):
             naive_pred_frames[:, extrap_time:, ...] = last_frame.expand(-1, nt_actual - extrap_time, -1, -1, -1)
             
             # For metrics, compare extrapolated frames only
-            gt_extrap = frames[:, extrap_time:, ...]
-            model_extrap = model_pred_frames[:, extrap_time:, ...]
-            naive_extrap = naive_pred_frames[:, extrap_time:, ...]
+            # IMPORTANT: frames is the REAL ground truth from dataloader (not modified)
+            gt_extrap = frames[:, extrap_time:, ...].clone()  # Real GT for extrapolation period
+            model_extrap = model_pred_frames[:, extrap_time:, ...]  # Model predictions for extrapolation
+            naive_extrap = naive_pred_frames[:, extrap_time:, ...]  # Naive predictions for extrapolation
             
             # Reshape from (B, T, C, H, W) to (B*T, C, H, W) for PSNR/SSIM
             b, t, c, h, w = gt_extrap.shape
@@ -166,6 +179,7 @@ def evaluate_and_compare_to_baseline(data_path, extrap_time=4, num_samples=5):
             total_model_l2_error += model_l2.item()
             total_model_psnr += model_psnr.item()
             total_model_ssim += model_ssim.item()
+            
             total_naive_l1_error += naive_l1.item()
             total_naive_l2_error += naive_l2.item()
             total_naive_psnr += naive_psnr.item()
@@ -183,24 +197,30 @@ def evaluate_and_compare_to_baseline(data_path, extrap_time=4, num_samples=5):
                         batch_idx,
                         step,
                         extrap_time=extrap_time,
-                        save_dir='./eval_plots_mnist'
+                        save_dir='./eval_plots_model_vs_baseline'
                     )
                     plot_count += 1
             
             del initial_states, output_list
 
-    print(f"Total model L1 error: {total_model_l1_error / total_steps:.4f}")
-    print(f"Total model L2 error: {total_model_l2_error / total_steps:.4f}")
-    print(f"Total model PSNR: {total_model_psnr / total_steps:.4f}")
-    print(f"Total model SSIM: {total_model_ssim / total_steps:.4f}")
-    print(f"Total naive L1 error: {total_naive_l1_error / total_steps:.4f}")
-    print(f"Total naive L2 error: {total_naive_l2_error / total_steps:.4f}")
-    print(f"Total naive PSNR: {total_naive_psnr / total_steps:.4f}")
-    print(f"Total naive SSIM: {total_naive_ssim / total_steps:.4f}")
+    print("\n" + "="*60)
+    print("Naive Baseline Method")
+    print(f"  L1 error: {total_naive_l1_error / total_steps:.4f}")
+    print(f"  L2 error: {total_naive_l2_error / total_steps:.4f}")
+    print(f"  PSNR: {total_naive_psnr / total_steps:.4f}")
+    print(f"  SSIM: {total_naive_ssim / total_steps:.4f}")
+    
+    print("\nModel")
+    print(f"  L1 error: {total_model_l1_error / total_steps:.4f}")
+    print(f"  L2 error: {total_model_l2_error / total_steps:.4f}")
+    print(f"  PSNR: {total_model_psnr / total_steps:.4f}")
+    print(f"  SSIM: {total_model_ssim / total_steps:.4f}")
+    print("="*60)
+    
 
-def evaluate_disruption(disruption_path, original_path, disruption_time, num_samples=5, save_dir='./eval_plots_mnist'):
-    model, disruption_dataloader = get_model_and_dataloader(disruption_path, extrap_time=None)
-    _, original_dataloader = get_model_and_dataloader(original_path, extrap_time=None)
+def evaluate_disruption(disruption_path, original_path, disruption_time, model_path, num_samples=5, save_dir='./eval_plots_disruption'):
+    model, disruption_dataloader = get_model_and_dataloader(disruption_path, model_path, extrap_time=None)
+    _, original_dataloader = get_model_and_dataloader(original_path, model_path, extrap_time=None)
     
     plot_count = 0
     total_disrupt_pred_l1 = 0
@@ -371,15 +391,20 @@ if __name__ == '__main__':
     disrupt_sudden_transform_path = config.disrupt_sudden_transform_path
     disrupt_sudden_disappear_path = config.disrupt_sudden_disappear_path
     original_path = config.val_path
-
+    
+    # Compare model vs naive baseline
     # evaluate_and_compare_to_baseline(
-    #     data_path=data_path,
+    #     data_path=original_path,
+    #     model_path=model_path,
     #     extrap_time=8,
     #     num_samples=5
     # )
+    
+    # # Simple evaluation with plots
     # evaluate_and_plot(
-    #     data_path=data_path,
-    #     extrap_time=None,
+    #     data_path=original_path,
+    #     model_path=model_path,
+    #     extrap_time=8,
     #     num_samples=5
     # )
     
@@ -388,6 +413,7 @@ if __name__ == '__main__':
         disruption_path=disrupt_sudden_appear_path,
         original_path=original_path,
         disruption_time=8,
+        model_path=model_path,
         num_samples=5,
         save_dir='./eval_plots_sudden_appear'
     )
@@ -397,6 +423,7 @@ if __name__ == '__main__':
         disruption_path=disrupt_sudden_transform_path,
         original_path=original_path,
         disruption_time=8,
+        model_path=model_path,
         num_samples=5,
         save_dir='./eval_plots_sudden_transform'
     )
@@ -406,7 +433,7 @@ if __name__ == '__main__':
         disruption_path=disrupt_sudden_disappear_path,
         original_path=original_path,
         disruption_time=8,
+        model_path=model_path,
         num_samples=5,
         save_dir='./eval_plots_sudden_disappear'
     )
-

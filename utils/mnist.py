@@ -5,10 +5,10 @@ import os
 from sklearn.model_selection import train_test_split
 
 
-def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42):
+def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42, val_path="mnist_val_multi.npy", train_path="mnist_train_multi.npy"):
     parent_dir = os.path.dirname(datapath)
-    train_path = os.path.join(parent_dir, "mnist_train.npy")
-    val_path = os.path.join(parent_dir, "mnist_val.npy")
+    train_path = os.path.join(parent_dir, train_path)
+    val_path = os.path.join(parent_dir, val_path)
     
     if os.path.exists(train_path) and os.path.exists(val_path):
         print(f"Train and val files already exist at {train_path} and {val_path}")
