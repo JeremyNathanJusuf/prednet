@@ -11,6 +11,8 @@ import config
 from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
 from tqdm import tqdm
 
+from utils.dataset_generator import DisruptDatasetGenerator
+
 # Import parameters from config
 device = config.device
 batch_size = config.batch_size

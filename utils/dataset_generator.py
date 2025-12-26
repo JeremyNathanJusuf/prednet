@@ -643,26 +643,15 @@ class DisruptDatasetGenerator:
                 )
                 additional_digits.append((digit_add, scale_add, velocity_add, pos_add))
             
-            # Create base validation video with additional digits
-            val_video = np.zeros((nt, 1, target_h, target_w), dtype=np.float32)
-            for t in range(nt):
-                frame = base_video[t].copy()
-                # Add all additional digits
-                for digit_add, scale_add, velocity_add, pos_add in additional_digits:
-                    current_pos = pos_add + velocity_add * t
-                    frame = self._overlay_digit(frame, digit_add, scale_add, current_pos, h=target_h, w=target_w)
-                val_video[t, 0] = frame
-            
-            base_val_videos.append(val_video)
-            
-            # Generate disruption parameters for each type (will be applied to base_val_video)
-            # For appear: digit appears at disruption_time
+            # Generate disruption parameters for each type FIRST (before creating base_val)
+            # For appear: digit appears at disruption_time (NOT in base_val)
             digit_appear, scale_appear, velocity_appear, pos_appear = self._init_new_digit_with_iou_check(
                 base_video, min_scale, max_scale,
                 start_time=self.disruption_time, end_time=nt
             )
             
             # For transform: digit1 from start, transforms to digit2 at disruption_time
+            # digit1 should be in base_val throughout (full trajectory)
             digit1_transform, scale_transform, velocity_transform, pos_transform = self._init_new_digit_with_iou_check(
                 base_video, min_scale, max_scale,
                 start_time=0, end_time=nt
@@ -670,10 +659,32 @@ class DisruptDatasetGenerator:
             digit2_transform = self._get_random_digit()
             
             # For disappear: digit from start, disappears at disruption_time
+            # This digit should be in base_val throughout (full trajectory)
             digit_disappear, scale_disappear, velocity_disappear, pos_disappear = self._init_new_digit_with_iou_check(
                 base_video, min_scale, max_scale,
                 start_time=0, end_time=self.disruption_time
             )
+            
+            # Create base validation video with additional digits + transform/disappear digits (full trajectories)
+            val_video = np.zeros((nt, 1, target_h, target_w), dtype=np.float32)
+            for t in range(nt):
+                frame = base_video[t].copy()
+                # Add all additional digits
+                for digit_add, scale_add, velocity_add, pos_add in additional_digits:
+                    current_pos = pos_add + velocity_add * t
+                    frame = self._overlay_digit(frame, digit_add, scale_add, current_pos, h=target_h, w=target_w)
+                
+                # Add transform digit1 (full trajectory, no transformation)
+                current_pos_transform = pos_transform + velocity_transform * t
+                frame = self._overlay_digit(frame, digit1_transform, scale_transform, current_pos_transform, h=target_h, w=target_w)
+                
+                # Add disappear digit (full trajectory, no disappearance)
+                current_pos_disappear = pos_disappear + velocity_disappear * t
+                frame = self._overlay_digit(frame, digit_disappear, scale_disappear, current_pos_disappear, h=target_h, w=target_w)
+                
+                val_video[t, 0] = frame
+            
+            base_val_videos.append(val_video)
             
             disruption_params.append({
                 'appear': (digit_appear, scale_appear, velocity_appear, pos_appear),
@@ -717,16 +728,17 @@ class DisruptDatasetGenerator:
         # Generate transform datasets
         transform_videos = []
         for i in tqdm(range(num_samples), desc="Generating transform"):
-            # Start from base validation video
+            # Start from base validation video (already has digit1 throughout)
             video = base_val_videos[i].copy()
             digit1, digit2, scale, velocity, pos = disruption_params[i]['transform']
-            additional_digits = disruption_params[i]['additional_digits']
             
-            # Add disruption: digit transforms from digit1 to digit2 at disruption_time
+            # Apply disruption: replace digit1 with digit2 at disruption_time
+            # Base_val already has digit1 throughout, so we need to overlay digit2 starting at disruption_time
             for t in range(nt):
-                current_pos = pos + velocity * t
-                digit = digit2 if t >= self.disruption_time else digit1
-                video[t, 0] = self._overlay_digit(video[t, 0].copy(), digit, scale, current_pos, h=target_h, w=target_w)
+                if t >= self.disruption_time:
+                    current_pos = pos + velocity * t
+                    # Overlay digit2 (this will replace digit1 since they're at the same position)
+                    video[t, 0] = self._overlay_digit(video[t, 0].copy(), digit2, scale, current_pos, h=target_h, w=target_w)
             
             transform_videos.append(video)
         
@@ -739,16 +751,38 @@ class DisruptDatasetGenerator:
         # Generate disappear datasets
         disappear_videos = []
         for i in tqdm(range(num_samples), desc="Generating disappear"):
-            # Start from base validation video
+            # Start from base validation video (already has disappear digit throughout)
             video = base_val_videos[i].copy()
-            digit, scale, velocity, pos = disruption_params[i]['disappear']
-            additional_digits = disruption_params[i]['additional_digits']
+            digit_disappear, scale_disappear, velocity_disappear, pos_disappear = disruption_params[i]['disappear']
             
-            # Add disruption: digit disappears at disruption_time
-            for t in range(nt):
-                if t < self.disruption_time:
-                    current_pos = pos + velocity * t
-                    video[t, 0] = self._overlay_digit(video[t, 0].copy(), digit, scale, current_pos, h=target_h, w=target_w)
+            # Apply disruption: remove disappear digit at disruption_time
+            # We need to recreate frames from t=disruption_time onwards without the disappear digit
+            # Get the base video (without any added digits)
+            base_video = self._get_base_video(i)
+            if nt is not None and base_video.shape[0] > nt:
+                base_video = base_video[:nt]
+            
+            if target_h != self.h or target_w != self.w:
+                resized_base = np.zeros((nt, target_h, target_w), dtype=np.float32)
+                for t in range(nt):
+                    resized_base[t] = cv2.resize(base_video[t], (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+                base_video = resized_base
+            
+            additional_digits = disruption_params[i]['additional_digits']
+            digit1_transform, digit2_transform, scale_transform, velocity_transform, pos_transform = disruption_params[i]['transform']
+            
+            # Rebuild frames from disruption_time onwards without the disappear digit
+            for t in range(self.disruption_time, nt):
+                frame = base_video[t].copy()
+                # Add all additional digits
+                for digit_add, scale_add, velocity_add, pos_add in additional_digits:
+                    current_pos = pos_add + velocity_add * t
+                    frame = self._overlay_digit(frame, digit_add, scale_add, current_pos, h=target_h, w=target_w)
+                # Add transform digit1 (should still be there, full trajectory)
+                current_pos_transform = pos_transform + velocity_transform * t
+                frame = self._overlay_digit(frame, digit1_transform, scale_transform, current_pos_transform, h=target_h, w=target_w)
+                # Do NOT add disappear digit (it disappears at disruption_time)
+                video[t, 0] = frame
             
             disappear_videos.append(video)
         
