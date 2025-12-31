@@ -4,7 +4,55 @@ from PIL import Image
 import os
 from sklearn.model_selection import train_test_split
 
+def _randomize_dataset(datasets):
+    merged_dataset = np.concatenate(datasets) # (merged_num_videos, nt, c, h, w)
+    n_videos = merged_dataset.shape[0]
+    randomized_idx = np.random.permutation(range(n_videos))
 
+    final_dataset = np.zeros(merged_dataset.shape)
+
+    for idx in range(n_videos):
+        random_idx = randomized_idx[idx]
+        final_dataset[idx, ...] = merged_dataset[random_idx, ...]
+
+    return final_dataset
+
+def merge_and_split_adapt_data(adapt_datapath, train_ratio=0.8, random_state=42):
+    train_datasets = []
+    test_datasets = []
+
+    dataset_paths = [os.path.join(adapt_datapath, file_path) for file_path in os.listdir(adapt_datapath)]
+
+    for file_path in dataset_paths:
+        if 'sudden_' in file_path:
+            dataset = np.load(file_path) # (num_videos, nt, c, h, w)
+            
+            X_train, X_test = train_test_split(
+                dataset, 
+                train_size=train_ratio, 
+                random_state=random_state, 
+                shuffle=True
+            )
+
+            train_datasets.append(X_train)
+            test_datasets.append(X_test)
+        
+    if train_datasets and test_datasets:
+        final_train_dataset = _randomize_dataset(train_datasets)
+        final_test_dataset = _randomize_dataset(test_datasets)
+
+        final_train_path = './adapt_train/mnist_adapt_train.npy'
+        final_test_path = './adapt_train/mnist_adapt_test.npy'
+
+        np.save(final_train_path, final_train_dataset)
+        np.save(final_test_path, final_test_dataset)
+
+        print('Added training and validation set for adapt dataset model training')
+
+        return final_train_path, final_test_path
+
+    return None, None
+    
 def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42, val_path="mnist_val_multi.npy", train_path="mnist_train_multi.npy"):
     parent_dir = os.path.dirname(datapath)
     train_path = os.path.join(parent_dir, train_path)

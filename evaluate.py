@@ -418,7 +418,7 @@ if __name__ == '__main__':
         max_scale=2.5,
         nt=config.nt,
         min_digits=2,  # Base has 2 digits, total will be 2-5
-        max_digits=5,  # Including disruption digit and additional digits
+        max_digits=3,  # Including disruption digit and additional digits
         h=config.im_height,
         w=config.im_width
     )

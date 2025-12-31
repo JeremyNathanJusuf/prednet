@@ -11,7 +11,7 @@ import random
 
 from utils import EarlyStopping, save_model, save_best_val_model, load_model
 from prednet import Prednet
-from utils.mnist import MNISTDataloader, split_mnist_data
+from utils.mnist import MNISTDataloader, split_mnist_data, merge_and_split_adapt_data
 from utils.plot import plot_hidden_states_list
 import config
 
@@ -63,6 +63,9 @@ model_checkpoint_path = config.model_checkpoint_path
 
 lr_lambda = config.get_lr_lambda(init_lr, latter_lr)
 
+# TODO: remove later
+adapt_parent_path = config.adapt_parent_path
+
 def train():
     wandb.init(
         project="prednet-mnist",
@@ -87,11 +90,15 @@ def train():
     )
     
     # LOAD AND SPLIT MNIST DATASET
-    train_path, val_path = split_mnist_data(
-        datapath=mnist_raw_path, 
-        nt=nt,
-        target_h=im_height,
-        target_w=im_width
+    # train_path, val_path = split_mnist_data(
+    #     datapath=mnist_raw_path, 
+    #     nt=nt,
+    #     target_h=im_height,
+    #     target_w=im_width
+    # )
+
+    train_path, val_path = merge_and_split_adapt_data(
+        adapt_datapath=adapt_parent_path
     )
     
     train_dataloader = MNISTDataloader(

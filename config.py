@@ -10,7 +10,7 @@ import torch
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu'
 
 # Training name
-training_suffix = 'finetuning_mnist_extrap'
+training_suffix = 'finetuning_mnist_disrupt'
 
 # Directory paths with training suffix
 checkpoint_dir = f'./checkpoints_{training_suffix}'
@@ -25,6 +25,7 @@ num_dilate_iterations = 1
 
 # Data paths
 mnist_raw_path = "./data/multi_digit_10000_16_d2-5.npy"  # Raw MNIST sequence data (will be split into train/val)
+adapt_parent_path = "./data/adapt" 
 # train_path = "./data/mnist_train_multi.npy"  # Created by split_mnist_data
 # val_path = "./data/mnist_val_multi.npy"  # Created by split_mnist_data
 train_path = "./data/mnist_train.npy"  # Created by split_mnist_data
