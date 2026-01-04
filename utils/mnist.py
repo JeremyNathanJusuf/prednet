@@ -5,6 +5,10 @@ import os
 from sklearn.model_selection import train_test_split
 
 def _randomize_dataset(datasets):
+    """
+    Randomize the order of the data in the given dataset
+    Currently redundant as we have dataloader to shuffle dataset
+    """
     merged_dataset = np.concatenate(datasets) # (merged_num_videos, nt, c, h, w)
     n_videos = merged_dataset.shape[0]
     randomized_idx = np.random.permutation(range(n_videos))
@@ -18,6 +22,9 @@ def _randomize_dataset(datasets):
     return final_dataset
 
 def merge_and_split_adapt_data(adapt_datapath, train_ratio=0.8, random_state=42):
+    """
+    Used to merge adapt dataset (sudden appear, disappear, transform) and splitting it into training and validation dataset
+    """
     train_datasets = []
     test_datasets = []
 
@@ -36,7 +43,7 @@ def merge_and_split_adapt_data(adapt_datapath, train_ratio=0.8, random_state=42)
 
             train_datasets.append(X_train)
             test_datasets.append(X_test)
-        
+
     if train_datasets and test_datasets:
         final_train_dataset = _randomize_dataset(train_datasets)
         final_test_dataset = _randomize_dataset(test_datasets)
@@ -55,6 +62,10 @@ def merge_and_split_adapt_data(adapt_datapath, train_ratio=0.8, random_state=42)
     return None, None
     
 def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42, val_path="mnist_val_multi.npy", train_path="mnist_train_multi.npy"):
+    """ 
+    Used for initial Moving MNIST Data (num_videos, 20, 64, 64)
+    """
+    
     parent_dir = os.path.dirname(datapath)
     train_path = os.path.join(parent_dir, train_path)
     val_path = os.path.join(parent_dir, val_path)
@@ -107,6 +118,9 @@ def split_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, 
 
 
 def split_custom_mnist_data(datapath, nt, target_h=128, target_w=160, train_ratio=0.8, random_state=42):
+    """
+    used to split custom mnist (generated dataset) with shape (num_videos, nt, c, h, w)
+    """
     parent_dir = os.path.dirname(datapath)
     train_path = os.path.join(parent_dir, "mnist_train.npy")
     val_path = os.path.join(parent_dir, "mnist_val.npy")
@@ -115,7 +129,7 @@ def split_custom_mnist_data(datapath, nt, target_h=128, target_w=160, train_rati
         print(f"Train and val files already exist at {train_path} and {val_path}")
         return train_path, val_path
     
-    X = np.load(datapath)  # (batch, nt, channels, h, w)
+    X = np.load(datapath)  # (num_videos, nt, c, h, w)
     
     train_X, val_X = train_test_split(
         X, 

@@ -171,6 +171,9 @@ def plot_predictions(gt_frames, pred_frames, batch_idx, step, save_dir='./eval_p
 
 
 def plot_layer(hidden_states_list, frames, layer_name, output_dir, batch_idx):
+    """
+    Used to plot hidden layer (R, A, Ahat, E) outputs at all levels
+    """
     num_timesteps = len(hidden_states_list)
     num_layers = len(hidden_states_list[0][layer_name])
     
@@ -194,6 +197,10 @@ def plot_layer(hidden_states_list, frames, layer_name, output_dir, batch_idx):
     plt.close()
     
 def plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx):
+    """
+    Used to plot input vs frames 
+    Predictons are taken from Ahat at level 0 in hidden_states_list
+    """
     num_timesteps = len(hidden_states_list)
     fig, axes = plt.subplots(2, num_timesteps, figsize=(num_timesteps * 3, 6))
     
@@ -220,7 +227,10 @@ def plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx):
     plt.close()
 
 def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train', debug_images_dir='./debug_layer_images'):
-    
+    """
+    Used to plot all hidden states and input vs prediction comparison
+    Used in training
+    """
     output_dir = f'{debug_images_dir}/{data_split}/{epoch}'
     os.makedirs(output_dir, exist_ok=True)
     
