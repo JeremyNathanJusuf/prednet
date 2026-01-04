@@ -226,6 +226,105 @@ def plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx):
     plt.savefig(os.path.join(output_dir, str(batch_idx), 'input_vs_prediction.png'), dpi=150, bbox_inches='tight')
     plt.close()
 
+def plot_disruption_comparison(disrupt_frames, disrupt_pred, original_pred, naive_pred, finetuned_pred=None,
+                               batch_idx=0, step=0, disruption_time=0, eval_start=0, save_dir='./eval_plots_disruption'):
+    """
+    Plot disruption comparison: GT (disrupt), Naive, Model-Disrupt, Model-Original, and Finetuned predictions.
+    
+    Args:
+        disrupt_frames: Ground truth disrupted frames (batch, nt, C, H, W)
+        disrupt_pred: Base model predictions on disrupted input (batch, nt, C, H, W)
+        original_pred: Base model predictions on original input (batch, nt, C, H, W)
+        naive_pred: Naive predictions - disruption frame repeated (batch, nt, C, H, W)
+        finetuned_pred: Finetuned model predictions on disrupted input (batch, nt, C, H, W), optional
+        batch_idx: Which batch item to visualize
+        step: Step number for filename
+        disruption_time: Time step where disruption occurs
+        eval_start: Time step where evaluation begins
+        save_dir: Directory to save plots
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Convert to numpy if needed
+    if isinstance(disrupt_frames, torch.Tensor):
+        disrupt_frames = disrupt_frames.cpu().numpy()
+    if isinstance(disrupt_pred, torch.Tensor):
+        disrupt_pred = disrupt_pred.cpu().numpy()
+    if isinstance(original_pred, torch.Tensor):
+        original_pred = original_pred.cpu().numpy()
+    if isinstance(naive_pred, torch.Tensor):
+        naive_pred = naive_pred.cpu().numpy()
+    if finetuned_pred is not None and isinstance(finetuned_pred, torch.Tensor):
+        finetuned_pred = finetuned_pred.cpu().numpy()
+    
+    gt = disrupt_frames[batch_idx]
+    dp = disrupt_pred[batch_idx]
+    op = original_pred[batch_idx]
+    naive = naive_pred[batch_idx]
+    
+    nt = gt.shape[0]
+    
+    # Determine number of rows based on whether finetuned model is provided
+    num_rows = 5 if finetuned_pred is not None else 4
+    fig, axes = plt.subplots(num_rows, nt, figsize=(2.5*nt, 2.5*num_rows))
+    
+    # New order:
+    # 0. Disrupt Dataset (GT)
+    # 1. Naive method
+    # 2. Base Model - Disrupt Dataset (predictions)
+    # 3. Base Model - Original Dataset (predictions)
+    # 4. Finetuned Model - Disrupt Dataset (predictions) - optional
+    row_data = [
+        (gt, 'GT (Disrupt)', 'GT'),
+        (naive, 'Naive', 'Naive'),
+        (dp, 'Base - Disrupt', 'Base-D'),
+        (op, 'Base - Original', 'Base-O'),
+    ]
+    
+    if finetuned_pred is not None:
+        fp = finetuned_pred[batch_idx]
+        row_data.append((fp, 'Finetuned - Disrupt', 'FT-D'))
+    
+    for row_idx, (frames, row_label, title_prefix) in enumerate(row_data):
+        for t in range(nt):
+            img = np.transpose(frames[t], (1, 2, 0))
+            img = np.clip(img, 0, 1)
+            
+            if img.shape[2] == 1:
+                img = img.squeeze(-1)
+                axes[row_idx, t].imshow(img, cmap='gray', vmin=0, vmax=1)
+            elif img.shape[2] == 3:
+                if np.allclose(img[:,:,0], img[:,:,1], atol=0.1) and np.allclose(img[:,:,1], img[:,:,2], atol=0.1):
+                    axes[row_idx, t].imshow(img[:,:,0], cmap='gray', vmin=0, vmax=1)
+                else:
+                    axes[row_idx, t].imshow(img)
+            else:
+                axes[row_idx, t].imshow(img)
+            
+            axes[row_idx, t].axis('off')
+            
+            if t == disruption_time:
+                title = f'{title_prefix} t={t}*'
+                axes[row_idx, t].set_title(title, fontsize=9)
+            elif t >= eval_start:
+                title = f'{title_prefix} t={t}'
+                axes[row_idx, t].set_title(title, fontsize=9, color='red')
+            else:
+                title = f'{title_prefix} t={t}'
+                axes[row_idx, t].set_title(title, fontsize=9)
+        
+        axes[row_idx, 0].set_ylabel(row_label, fontsize=11, rotation=0, ha='right', va='center')
+    
+    fig.text(0.5, 0.02, f'* Disruption frames (t={disruption_time}), Red: Eval frames (t>={eval_start})', 
+             ha='center', fontsize=10)
+    plt.suptitle(f'Disruption Comparison - Batch {batch_idx}, Step {step}', fontsize=14)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+    
+    save_path = os.path.join(save_dir, f'disruption_step{step}_batch{batch_idx}.png')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
 def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train', debug_images_dir='./debug_layer_images'):
     """
     Used to plot all hidden states and input vs prediction comparison

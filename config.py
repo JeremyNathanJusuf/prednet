@@ -79,8 +79,8 @@ def get_lr_lambda(init_lr, latter_lr):
 # Evaluation parameters
 n_samples_eval = 10
 # model_path = './pretrained/preTrained_weights_forPyTorch.pkl'  # Use pretrained weights for evaluation
-# model_path = './checkpoints_finetuning_mnist_3/epoch_best_val.pth'
-model_path = './checkpoints_finetuning_mnist_disrupt/epoch_best_val.pth'
+model_path = './checkpoints_finetuning_mnist_3/epoch_best_val.pth'
+model_path_finetuned_on_disrupt = './checkpoints_finetuning_mnist_disrupt/epoch_best_val.pth'
 
 
 # Finetuning

@@ -1,11 +1,9 @@
 import os
-import numpy as np
 import torch
 
 from utils.mnist import MNISTDataloader, split_mnist_data
 from utils.model import load_model
-from utils.plot import plot_predictions, plot_comparison
-import matplotlib.pyplot as plt
+from utils.plot import plot_predictions, plot_comparison, plot_disruption_comparison
 from prednet import Prednet
 import config
 from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
@@ -220,9 +218,15 @@ def evaluate_and_compare_to_baseline(data_path, model_path, extrap_time=4, num_s
     print("="*60)
     
 
-def evaluate_disruption(disruption_path, original_path, disruption_time, model_path, num_samples=5, save_dir='./eval_plots_disruption'):
+def evaluate_disruption(disruption_path, original_path, disruption_time, model_path, model_path_finetuned_on_disrupt=None, num_samples=5, save_dir='./eval_plots_disruption'):
     model, disruption_dataloader = get_model_and_dataloader(disruption_path, model_path, extrap_time=None)
     _, original_dataloader = get_model_and_dataloader(original_path, model_path, extrap_time=None)
+    
+    # Load finetuned model if provided
+    finetuned_model = None
+    if model_path_finetuned_on_disrupt is not None:
+        finetuned_model, _ = get_model_and_dataloader(disruption_path, model_path_finetuned_on_disrupt, extrap_time=None)
+        finetuned_model = finetuned_model  # The first element is the model
     
     plot_count = 0
     total_disrupt_pred_l1 = 0
@@ -237,6 +241,10 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
     total_naive_l2 = 0
     total_naive_psnr = 0
     total_naive_ssim = 0
+    total_finetuned_pred_l1 = 0
+    total_finetuned_pred_l2 = 0
+    total_finetuned_pred_psnr = 0
+    total_finetuned_pred_ssim = 0
     
     total_steps = len(disruption_dataloader)
     
@@ -258,6 +266,13 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
             initial_states = model.get_initial_states(input_shape)
             output_list, _ = model(original_frames.to(device), initial_states)
             original_pred = torch.stack(output_list, dim=1).detach().cpu()
+            
+            # Finetuned model predictions (if available)
+            finetuned_pred = None
+            if finetuned_model is not None:
+                initial_states = finetuned_model.get_initial_states(input_shape)
+                output_list, _ = finetuned_model(disrupt_frames.to(device), initial_states)
+                finetuned_pred = torch.stack(output_list, dim=1).detach().cpu()
             
             naive_pred = original_frames.clone()
             disrupt_frame_at_t = disrupt_frames[:, disruption_time:disruption_time+1, ...]
@@ -289,6 +304,19 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
             naive_psnr = peak_signal_noise_ratio(naive_pred_flat, gt_flat, data_range=1.0)
             naive_ssim = structural_similarity_index_measure(naive_pred_flat, gt_flat, data_range=1.0)
             
+            # Finetuned model metrics (if available)
+            if finetuned_pred is not None:
+                finetuned_pred_eval = finetuned_pred[:, eval_start:, ...]
+                finetuned_pred_flat = finetuned_pred_eval.reshape(b * t, c, h, w)
+                finetuned_l1 = torch.mean(torch.abs(finetuned_pred_eval - gt_eval))
+                finetuned_l2 = torch.mean(torch.pow(finetuned_pred_eval - gt_eval, 2))
+                finetuned_psnr = peak_signal_noise_ratio(finetuned_pred_flat, gt_flat, data_range=1.0)
+                finetuned_ssim = structural_similarity_index_measure(finetuned_pred_flat, gt_flat, data_range=1.0)
+                total_finetuned_pred_l1 += finetuned_l1.item()
+                total_finetuned_pred_l2 += finetuned_l2.item()
+                total_finetuned_pred_psnr += finetuned_psnr.item()
+                total_finetuned_pred_ssim += finetuned_ssim.item()
+            
             total_disrupt_pred_l1 += disrupt_l1.item()
             total_disrupt_pred_l2 += disrupt_l2.item()
             total_disrupt_pred_psnr += disrupt_psnr.item()
@@ -307,60 +335,10 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
                     if plot_count >= num_samples:
                         break
                     
-                    gt = disrupt_frames[batch_idx].cpu().numpy()
-                    dp = disrupt_pred[batch_idx].cpu().numpy()
-                    op = original_pred[batch_idx].cpu().numpy()
-                    naive = naive_pred[batch_idx].cpu().numpy()
-                    
-                    nt = gt.shape[0]
-                    fig, axes = plt.subplots(4, nt, figsize=(2.5*nt, 10))
-                    
-                    row_data = [
-                        (gt, 'GT (Disrupt)', 'GT'),
-                        (dp, 'Model - Disrupt', 'Disrupt'),
-                        (op, 'Model - Original', 'Original'),
-                        (naive, 'Naive', 'Naive'),
-                    ]
-                    
-                    for row_idx, (frames, row_label, title_prefix) in enumerate(row_data):
-                        for t in range(nt):
-                            img = np.transpose(frames[t], (1, 2, 0))
-                            img = np.clip(img, 0, 1)
-                            
-                            if img.shape[2] == 1:
-                                img = img.squeeze(-1)
-                                axes[row_idx, t].imshow(img, cmap='gray', vmin=0, vmax=1)
-                            elif img.shape[2] == 3:
-                                if np.allclose(img[:,:,0], img[:,:,1], atol=0.1) and np.allclose(img[:,:,1], img[:,:,2], atol=0.1):
-                                    axes[row_idx, t].imshow(img[:,:,0], cmap='gray', vmin=0, vmax=1)
-                                else:
-                                    axes[row_idx, t].imshow(img)
-                            else:
-                                axes[row_idx, t].imshow(img)
-                            
-                            axes[row_idx, t].axis('off')
-                            
-                            if t == disruption_time:
-                                title = f'{title_prefix} t={t}*'
-                                axes[row_idx, t].set_title(title, fontsize=9)
-                            elif t >= eval_start:
-                                title = f'{title_prefix} t={t}'
-                                axes[row_idx, t].set_title(title, fontsize=9, color='red')
-                            else:
-                                title = f'{title_prefix} t={t}'
-                                axes[row_idx, t].set_title(title, fontsize=9)
-                        
-                        axes[row_idx, 0].set_ylabel(row_label, fontsize=11, rotation=0, ha='right', va='center')
-                    
-                    fig.text(0.5, 0.02, f'* Disruption frames (t={disruption_time}), Red: Eval frames (t>={eval_start})', 
-                             ha='center', fontsize=10)
-                    plt.suptitle(f'Disruption Comparison - Batch {batch_idx}, Step {step}', fontsize=14)
-                    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-                    
-                    save_path = os.path.join(save_dir, f'disruption_step{step}_batch{batch_idx}.png')
-                    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-                    plt.close()
-                    
+                    plot_disruption_comparison(
+                        disrupt_frames, disrupt_pred, original_pred, naive_pred, finetuned_pred,
+                        batch_idx, step, disruption_time, eval_start, save_dir
+                    )
                     plot_count += 1
             
             del initial_states, output_list
@@ -377,6 +355,11 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
     print(f"Naive L2: {total_naive_l2 / total_steps:.4f}")
     print(f"Naive PSNR: {total_naive_psnr / total_steps:.4f}")
     print(f"Naive SSIM: {total_naive_ssim / total_steps:.4f}")
+    if finetuned_model is not None:
+        print(f"Finetuned Pred L1: {total_finetuned_pred_l1 / total_steps:.4f}")
+        print(f"Finetuned Pred L2: {total_finetuned_pred_l2 / total_steps:.4f}")
+        print(f"Finetuned Pred PSNR: {total_finetuned_pred_psnr / total_steps:.4f}")
+        print(f"Finetuned Pred SSIM: {total_finetuned_pred_ssim / total_steps:.4f}")
     
 if __name__ == '__main__':
     disrupt_sudden_appear_path = config.disrupt_sudden_appear_path
