@@ -26,6 +26,7 @@ data
 custom_dataset
 eval_results
 eval_plots*
+eval_metrics*
 
 # Files
 test*.ipynb

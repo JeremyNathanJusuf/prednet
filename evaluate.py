@@ -1,5 +1,6 @@
 import os
 import torch
+import pandas as pd
 
 from utils.mnist import MNISTDataloader, split_mnist_data
 from utils.model import load_model
@@ -343,23 +344,118 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
             
             del initial_states, output_list
     
-    print(f"Disrupt Pred L1: {total_disrupt_pred_l1 / total_steps:.4f}")
-    print(f"Disrupt Pred L2: {total_disrupt_pred_l2 / total_steps:.4f}")
-    print(f"Disrupt Pred PSNR: {total_disrupt_pred_psnr / total_steps:.4f}")
-    print(f"Disrupt Pred SSIM: {total_disrupt_pred_ssim / total_steps:.4f}")
-    print(f"Original Pred L1: {total_original_pred_l1 / total_steps:.4f}")
-    print(f"Original Pred L2: {total_original_pred_l2 / total_steps:.4f}")
-    print(f"Original Pred PSNR: {total_original_pred_psnr / total_steps:.4f}")
-    print(f"Original Pred SSIM: {total_original_pred_ssim / total_steps:.4f}")
-    print(f"Naive L1: {total_naive_l1 / total_steps:.4f}")
-    print(f"Naive L2: {total_naive_l2 / total_steps:.4f}")
-    print(f"Naive PSNR: {total_naive_psnr / total_steps:.4f}")
-    print(f"Naive SSIM: {total_naive_ssim / total_steps:.4f}")
+    # Compute average metrics
+    metrics = {
+        'base_disrupt': {
+            'L1': total_disrupt_pred_l1 / total_steps,
+            'L2': total_disrupt_pred_l2 / total_steps,
+            'PSNR': total_disrupt_pred_psnr / total_steps,
+            'SSIM': total_disrupt_pred_ssim / total_steps,
+        },
+        'base_original': {
+            'L1': total_original_pred_l1 / total_steps,
+            'L2': total_original_pred_l2 / total_steps,
+            'PSNR': total_original_pred_psnr / total_steps,
+            'SSIM': total_original_pred_ssim / total_steps,
+        },
+        'naive': {
+            'L1': total_naive_l1 / total_steps,
+            'L2': total_naive_l2 / total_steps,
+            'PSNR': total_naive_psnr / total_steps,
+            'SSIM': total_naive_ssim / total_steps,
+        },
+    }
+    
     if finetuned_model is not None:
-        print(f"Finetuned Pred L1: {total_finetuned_pred_l1 / total_steps:.4f}")
-        print(f"Finetuned Pred L2: {total_finetuned_pred_l2 / total_steps:.4f}")
-        print(f"Finetuned Pred PSNR: {total_finetuned_pred_psnr / total_steps:.4f}")
-        print(f"Finetuned Pred SSIM: {total_finetuned_pred_ssim / total_steps:.4f}")
+        metrics['finetuned_disrupt'] = {
+            'L1': total_finetuned_pred_l1 / total_steps,
+            'L2': total_finetuned_pred_l2 / total_steps,
+            'PSNR': total_finetuned_pred_psnr / total_steps,
+            'SSIM': total_finetuned_pred_ssim / total_steps,
+        }
+    
+    # Print metrics
+    print(f"Disrupt Pred L1: {metrics['base_disrupt']['L1']:.4f}")
+    print(f"Disrupt Pred L2: {metrics['base_disrupt']['L2']:.4f}")
+    print(f"Disrupt Pred PSNR: {metrics['base_disrupt']['PSNR']:.4f}")
+    print(f"Disrupt Pred SSIM: {metrics['base_disrupt']['SSIM']:.4f}")
+    print(f"Original Pred L1: {metrics['base_original']['L1']:.4f}")
+    print(f"Original Pred L2: {metrics['base_original']['L2']:.4f}")
+    print(f"Original Pred PSNR: {metrics['base_original']['PSNR']:.4f}")
+    print(f"Original Pred SSIM: {metrics['base_original']['SSIM']:.4f}")
+    print(f"Naive L1: {metrics['naive']['L1']:.4f}")
+    print(f"Naive L2: {metrics['naive']['L2']:.4f}")
+    print(f"Naive PSNR: {metrics['naive']['PSNR']:.4f}")
+    print(f"Naive SSIM: {metrics['naive']['SSIM']:.4f}")
+    if finetuned_model is not None:
+        print(f"Finetuned Pred L1: {metrics['finetuned_disrupt']['L1']:.4f}")
+        print(f"Finetuned Pred L2: {metrics['finetuned_disrupt']['L2']:.4f}")
+        print(f"Finetuned Pred PSNR: {metrics['finetuned_disrupt']['PSNR']:.4f}")
+        print(f"Finetuned Pred SSIM: {metrics['finetuned_disrupt']['SSIM']:.4f}")
+    
+    return metrics
+
+
+def save_metrics_to_csv(metrics_dict, save_path='./eval_metrics/disruption_metrics.csv'):
+    rows = []
+    
+    for disruption_type, metrics in metrics_dict.items():
+        # Model - Base on Disrupt dataset
+        rows.append({
+            'Disruption': disruption_type,
+            'Model': 'Model - Base',
+            'Dataset': 'Disrupt',
+            'L1': metrics['base_disrupt']['L1'],
+            'L2': metrics['base_disrupt']['L2'],
+            'PSNR': metrics['base_disrupt']['PSNR'],
+            'SSIM': metrics['base_disrupt']['SSIM'],
+        })
+        
+        # Model - Base on Original dataset
+        rows.append({
+            'Disruption': disruption_type,
+            'Model': 'Model - Base',
+            'Dataset': 'Original',
+            'L1': metrics['base_original']['L1'],
+            'L2': metrics['base_original']['L2'],
+            'PSNR': metrics['base_original']['PSNR'],
+            'SSIM': metrics['base_original']['SSIM'],
+        })
+        
+        # Model - Finetuned on Disrupt dataset (if available)
+        if 'finetuned_disrupt' in metrics:
+            rows.append({
+                'Disruption': disruption_type,
+                'Model': 'Model - Finetuned',
+                'Dataset': 'Disrupt',
+                'L1': metrics['finetuned_disrupt']['L1'],
+                'L2': metrics['finetuned_disrupt']['L2'],
+                'PSNR': metrics['finetuned_disrupt']['PSNR'],
+                'SSIM': metrics['finetuned_disrupt']['SSIM'],
+            })
+        
+        # Naive on Disrupt dataset
+        rows.append({
+            'Disruption': disruption_type,
+            'Model': 'Naive',
+            'Dataset': 'Disrupt',
+            'L1': metrics['naive']['L1'],
+            'L2': metrics['naive']['L2'],
+            'PSNR': metrics['naive']['PSNR'],
+            'SSIM': metrics['naive']['SSIM'],
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    
+    # Save to CSV
+    df.to_csv(save_path, index=False)
+    print(f"Metrics saved to {save_path}")
+    
+    return df
+
     
 if __name__ == '__main__':
     disrupt_sudden_appear_path = config.disrupt_sudden_appear_path
@@ -413,8 +509,10 @@ if __name__ == '__main__':
     # print("\nBase validation dataset (shared by all disruption types):")
     # print(f"  - Base val: {datasets['base_val'][1]}")
     
+    all_metrics = {}
+    
     print(f"Evaluating sudden appear disruption...")
-    evaluate_disruption(
+    all_metrics['appear'] = evaluate_disruption(
         disruption_path=disrupt_sudden_appear_path,
         original_path=disrupt_base_path,
         disruption_time=8,
@@ -424,7 +522,7 @@ if __name__ == '__main__':
     )
     
     print(f"Evaluating sudden transform disruption...")
-    evaluate_disruption(
+    all_metrics['transform'] = evaluate_disruption(
         disruption_path=disrupt_sudden_transform_path,
         original_path=disrupt_base_path,
         disruption_time=8,
@@ -434,7 +532,7 @@ if __name__ == '__main__':
     )
     
     print(f"Evaluating sudden disappear disruption...")
-    evaluate_disruption(
+    all_metrics['disappear'] = evaluate_disruption(
         disruption_path=disrupt_sudden_disappear_path,
         original_path=disrupt_base_path,
         disruption_time=8,
@@ -442,3 +540,5 @@ if __name__ == '__main__':
         num_samples=5,
         save_dir='./eval_plots_sudden_disappear_'
     )
+    
+    save_metrics_to_csv(all_metrics, save_path='./eval_metrics/disruption_metrics.csv')
