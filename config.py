@@ -31,10 +31,10 @@ adapt_parent_path = "./data/adapt"
 train_path = "./data/mnist_train.npy"  # Created by split_mnist_data
 val_path = "./data/mnist_val.npy"  # Created by split_mnist_data
 
-disrupt_sudden_appear_path = "./data/adapt/sudden_appear_2000_16_t8.npy"
-disrupt_sudden_transform_path = "./data/adapt/sudden_transform_2000_16_t8.npy"
-disrupt_sudden_disappear_path = "./data/adapt/sudden_disappear_2000_16_t8.npy"
-disrupt_base_path = "./data/adapt/mnist_val_disrupt_base.npy"
+disrupt_sudden_appear_path = "./data/adapt_val/sudden_appear_2000_16_t8.npy"
+disrupt_sudden_transform_path = "./data/adapt_val/sudden_transform_2000_16_t8.npy"
+disrupt_sudden_disappear_path = "./data/adapt_val/sudden_disappear_2000_16_t8.npy"
+disrupt_base_path = "./data/adapt_val/mnist_val_disrupt_base.npy"
 
 # Training parameters
 nb_epoch = 1000
@@ -79,7 +79,9 @@ def get_lr_lambda(init_lr, latter_lr):
 # Evaluation parameters
 n_samples_eval = 10
 # model_path = './pretrained/preTrained_weights_forPyTorch.pkl'  # Use pretrained weights for evaluation
-model_path = './checkpoints_finetuning_mnist_3/epoch_best_val.pth'
+# model_path = './checkpoints_finetuning_mnist_3/epoch_best_val.pth'
+model_path = './checkpoints_finetuning_mnist_disrupt/epoch_best_val.pth'
+
 
 # Finetuning
 is_finetuning = True

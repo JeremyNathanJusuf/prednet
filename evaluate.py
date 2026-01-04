@@ -385,12 +385,12 @@ if __name__ == '__main__':
     disrupt_base_path = config.disrupt_base_path
     
     # Compare model vs naive baseline
-    evaluate_and_compare_to_baseline(
-        data_path='./data/mnist_val_multi.npy',
-        model_path=model_path,
-        extrap_time=8,
-        num_samples=5
-    )
+    # evaluate_and_compare_to_baseline(
+    #     data_path='./data/mnist_val_multi.npy',
+    #     model_path=model_path,
+    #     extrap_time=8,
+    #     num_samples=5
+    # )
     
     # # Simple evaluation with plots
     # evaluate_and_plot(
@@ -400,35 +400,35 @@ if __name__ == '__main__':
     #     num_samples=5
     # )
     
-    generator = DisruptDatasetGenerator(
-        base_data_path='./data/mnist_val.npy',
-        disruption_time=8,
-        max_iou=0.1,
-        target_h=config.im_height,
-        target_w=config.im_width
-    )
-    print(f"Loaded {generator.num_base_videos} base videos")
-    print(f"Disruption occurs at timestep {generator.disruption_time}")
-    print(f"Max IOU threshold: {generator.max_iou}")
-    print(f"Target dimensions: {config.im_height}x{config.im_width}")
+    # generator = DisruptDatasetGenerator(
+    #     base_data_path='./data/mnist_val.npy',
+    #     disruption_time=8,
+    #     max_iou=0.1,
+    #     target_h=config.im_height,
+    #     target_w=config.im_width
+    # )
+    # print(f"Loaded {generator.num_base_videos} base videos")
+    # print(f"Disruption occurs at timestep {generator.disruption_time}")
+    # print(f"Max IOU threshold: {generator.max_iou}")
+    # print(f"Target dimensions: {config.im_height}x{config.im_width}")
 
-    datasets = generator.generate_dataset(
-        num_samples=2000,
-        min_scale=2.0,
-        max_scale=2.5,
-        nt=config.nt,
-        min_digits=2,  # Base has 2 digits, total will be 2-5
-        max_digits=3,  # Including disruption digit and additional digits
-        h=config.im_height,
-        w=config.im_width
-    )
-    print("Generated datasets:", list(datasets.keys()))
-    print("\nDisruption datasets:")
-    print(f"  - Sudden appear: {datasets['sudden_appear'][1]}")
-    print(f"  - Transform: {datasets['transform'][1]}")
-    print(f"  - Disappear: {datasets['disappear'][1]}")
-    print("\nBase validation dataset (shared by all disruption types):")
-    print(f"  - Base val: {datasets['base_val'][1]}")
+    # datasets = generator.generate_dataset(
+    #     num_samples=2000,
+    #     min_scale=2.0,
+    #     max_scale=2.5,
+    #     nt=config.nt,
+    #     min_digits=2,  # Base has 2 digits, total will be 2-5
+    #     max_digits=3,  # Including disruption digit and additional digits
+    #     h=config.im_height,
+    #     w=config.im_width
+    # )
+    # print("Generated datasets:", list(datasets.keys()))
+    # print("\nDisruption datasets:")
+    # print(f"  - Sudden appear: {datasets['sudden_appear'][1]}")
+    # print(f"  - Transform: {datasets['transform'][1]}")
+    # print(f"  - Disappear: {datasets['disappear'][1]}")
+    # print("\nBase validation dataset (shared by all disruption types):")
+    # print(f"  - Base val: {datasets['base_val'][1]}")
     
     print(f"Evaluating sudden appear disruption...")
     evaluate_disruption(
@@ -437,7 +437,7 @@ if __name__ == '__main__':
         disruption_time=8,
         model_path=model_path,
         num_samples=5,
-        save_dir='./eval_plots_sudden_appear'
+        save_dir='./eval_plots_sudden_appear_'
     )
     
     print(f"Evaluating sudden transform disruption...")
@@ -447,7 +447,7 @@ if __name__ == '__main__':
         disruption_time=8,
         model_path=model_path,
         num_samples=5,
-        save_dir='./eval_plots_sudden_transform'
+        save_dir='./eval_plots_sudden_transform_'
     )
     
     print(f"Evaluating sudden disappear disruption...")
@@ -457,5 +457,5 @@ if __name__ == '__main__':
         disruption_time=8,
         model_path=model_path,
         num_samples=5,
-        save_dir='./eval_plots_sudden_disappear'
+        save_dir='./eval_plots_sudden_disappear_'
     )

@@ -40,9 +40,10 @@ def merge_and_split_adapt_data(adapt_datapath, train_ratio=0.8, random_state=42)
     if train_datasets and test_datasets:
         final_train_dataset = _randomize_dataset(train_datasets)
         final_test_dataset = _randomize_dataset(test_datasets)
-
-        final_train_path = './adapt_train/mnist_adapt_train.npy'
-        final_test_path = './adapt_train/mnist_adapt_test.npy'
+        
+        os.makedirs('./data/adapt_train', exist_ok=True)
+        final_train_path = './data/adapt_train/mnist_adapt_train.npy'
+        final_test_path = './data/adapt_train/mnist_adapt_test.npy'
 
         np.save(final_train_path, final_train_dataset)
         np.save(final_test_path, final_test_dataset)
