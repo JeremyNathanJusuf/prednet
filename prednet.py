@@ -161,6 +161,7 @@ class Prednet(nn.Module):
             timestep = states['timestep']
             frame_prediction = states['frame_prediction']
             if timestep >= self.extrap_time:
+                print(f"using extrap time for timestep {timestep}")
                 A = frame_prediction
                 
         R_list, E_list, c_list, A_list, Ahat_list = [], [], [], [A_gt], []

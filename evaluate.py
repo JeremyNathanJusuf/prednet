@@ -219,15 +219,14 @@ def evaluate_and_compare_to_baseline(data_path, model_path, extrap_time=4, num_s
     print("="*60)
     
 
-def evaluate_disruption(disruption_path, original_path, disruption_time, model_path, model_path_finetuned_on_disrupt=None, num_samples=5, save_dir='./eval_plots_disruption'):
-    model, disruption_dataloader = get_model_and_dataloader(disruption_path, model_path, extrap_time=None)
-    _, original_dataloader = get_model_and_dataloader(original_path, model_path, extrap_time=None)
+def evaluate_disruption(disruption_time, extrap_time, evaluate_time, disruption_path, original_path, model_path, model_path_finetuned_on_disrupt=None, num_samples=5, save_dir='./eval_plots_disruption'):
+    model, disruption_dataloader = get_model_and_dataloader(disruption_path, model_path, extrap_time=extrap_time)
+    _, original_dataloader = get_model_and_dataloader(original_path, model_path, extrap_time=extrap_time)
     
     # Load finetuned model if provided
     finetuned_model = None
     if model_path_finetuned_on_disrupt is not None:
         finetuned_model, _ = get_model_and_dataloader(disruption_path, model_path_finetuned_on_disrupt, extrap_time=None)
-        finetuned_model = finetuned_model  # The first element is the model
     
     plot_count = 0
     total_disrupt_pred_l1 = 0
@@ -251,8 +250,9 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
     
     os.makedirs(save_dir, exist_ok=True)
     
-    # evaluate from the disruption time + 1
-    eval_start = disruption_time + 1
+    # TODO fix with final configuration
+    # evaluate from the disruption time + 3 
+    # evaluate_time = disruption_time + 3
     
     with torch.no_grad():
         for step, (disrupt_frames, original_frames) in enumerate(zip(disruption_dataloader, original_dataloader), start=1):
@@ -279,10 +279,10 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
             disrupt_frame_at_t = disrupt_frames[:, disruption_time:disruption_time+1, ...]
             naive_pred[:, disruption_time:, ...] = disrupt_frame_at_t.expand(-1, nt_actual - disruption_time, -1, -1, -1)
             
-            gt_eval = disrupt_frames[:, eval_start:, ...]
-            disrupt_pred_eval = disrupt_pred[:, eval_start:, ...]
-            original_pred_eval = original_pred[:, eval_start:, ...]
-            naive_pred_eval = naive_pred[:, eval_start:, ...]
+            gt_eval = disrupt_frames[:, evaluate_time:, ...]
+            disrupt_pred_eval = disrupt_pred[:, evaluate_time:, ...]
+            original_pred_eval = original_pred[:, evaluate_time:, ...]
+            naive_pred_eval = naive_pred[:, evaluate_time:, ...]
             
             b, t, c, h, w = gt_eval.shape
             gt_flat = gt_eval.reshape(b * t, c, h, w)
@@ -307,7 +307,7 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
             
             # Finetuned model metrics (if available)
             if finetuned_pred is not None:
-                finetuned_pred_eval = finetuned_pred[:, eval_start:, ...]
+                finetuned_pred_eval = finetuned_pred[:, evaluate_time:, ...]
                 finetuned_pred_flat = finetuned_pred_eval.reshape(b * t, c, h, w)
                 finetuned_l1 = torch.mean(torch.abs(finetuned_pred_eval - gt_eval))
                 finetuned_l2 = torch.mean(torch.pow(finetuned_pred_eval - gt_eval, 2))
@@ -338,7 +338,7 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
                     
                     plot_disruption_comparison(
                         disrupt_frames, disrupt_pred, original_pred, naive_pred, finetuned_pred,
-                        batch_idx, step, disruption_time, eval_start, save_dir
+                        batch_idx, step, disruption_time, evaluate_time, save_dir
                     )
                     plot_count += 1
             
@@ -394,7 +394,6 @@ def evaluate_disruption(disruption_path, original_path, disruption_time, model_p
         print(f"Finetuned Pred SSIM: {metrics['finetuned_disrupt']['SSIM']:.4f}")
     
     return metrics
-
 
 def save_metrics_to_csv(metrics_dict, save_path='./eval_metrics/disruption_metrics.csv'):
     rows = []
@@ -462,6 +461,7 @@ if __name__ == '__main__':
     disrupt_sudden_transform_path = config.disrupt_sudden_transform_path
     disrupt_sudden_disappear_path = config.disrupt_sudden_disappear_path
     disrupt_base_path = config.disrupt_base_path
+    model_path_finetuned_on_disrupt = config.model_path_finetuned_on_disrupt
     
     # Compare model vs naive baseline
     # evaluate_and_compare_to_baseline(
@@ -510,35 +510,47 @@ if __name__ == '__main__':
     # print(f"  - Base val: {datasets['base_val'][1]}")
     
     all_metrics = {}
+
+    disruption_time = 8
+    evaluate_time = extrap_time = 11
     
     print(f"Evaluating sudden appear disruption...")
     all_metrics['appear'] = evaluate_disruption(
         disruption_path=disrupt_sudden_appear_path,
         original_path=disrupt_base_path,
-        disruption_time=8,
+        disruption_time=disruption_time,
+        extrap_time=extrap_time,
+        evaluate_time=evaluate_time,
         model_path=model_path,
+        model_path_finetuned_on_disrupt=model_path_finetuned_on_disrupt,
         num_samples=5,
-        save_dir='./eval_plots_sudden_appear_'
+        save_dir='./eval_plots_sudden_appear_new'
     )
     
     print(f"Evaluating sudden transform disruption...")
     all_metrics['transform'] = evaluate_disruption(
         disruption_path=disrupt_sudden_transform_path,
         original_path=disrupt_base_path,
-        disruption_time=8,
+        disruption_time=disruption_time,
+        extrap_time=extrap_time,
+        evaluate_time=evaluate_time,
         model_path=model_path,
+        model_path_finetuned_on_disrupt=model_path_finetuned_on_disrupt,
         num_samples=5,
-        save_dir='./eval_plots_sudden_transform_'
+        save_dir='./eval_plots_sudden_transform_new'
     )
     
     print(f"Evaluating sudden disappear disruption...")
     all_metrics['disappear'] = evaluate_disruption(
         disruption_path=disrupt_sudden_disappear_path,
         original_path=disrupt_base_path,
-        disruption_time=8,
+        disruption_time=disruption_time,
+        extrap_time=extrap_time,
+        evaluate_time=evaluate_time,
         model_path=model_path,
+        model_path_finetuned_on_disrupt=model_path_finetuned_on_disrupt,
         num_samples=5,
-        save_dir='./eval_plots_sudden_disappear_'
+        save_dir='./eval_plots_sudden_disappear_new'
     )
     
-    save_metrics_to_csv(all_metrics, save_path='./eval_metrics/disruption_metrics.csv')
+    save_metrics_to_csv(all_metrics, save_path='./eval_metrics/disruption_metrics_new.csv')
