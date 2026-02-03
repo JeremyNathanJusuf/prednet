@@ -4,7 +4,7 @@ import pandas as pd
 
 from utils.mnist import MNISTDataloader, split_mnist_data
 from utils.model import load_model
-from utils.plot import plot_predictions, plot_comparison, plot_disruption_comparison
+from utils.plot import plot_predictions, plot_comparison, plot_disruption_comparison, plot_timestep_metrics
 from prednet import Prednet
 import config
 from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
@@ -246,6 +246,9 @@ def evaluate_disruption(disruption_time, extrap_time, evaluate_time, disruption_
     total_finetuned_pred_psnr = 0
     total_finetuned_pred_ssim = 0
     
+    # Per-timestep metric accumulators (will be initialized on first batch)
+    timestep_metrics_accum = None
+    
     total_steps = len(disruption_dataloader)
     
     os.makedirs(save_dir, exist_ok=True)
@@ -331,6 +334,57 @@ def evaluate_disruption(disruption_time, extrap_time, evaluate_time, disruption_
             total_naive_psnr += naive_psnr.item()
             total_naive_ssim += naive_ssim.item()
             
+            # Per-timestep metrics computation
+            # Initialize accumulators on first batch
+            if timestep_metrics_accum is None:
+                timestep_metrics_accum = {
+                    'base_disrupt': {'L1': [0.0] * nt_actual, 'L2': [0.0] * nt_actual, 'PSNR': [0.0] * nt_actual, 'SSIM': [0.0] * nt_actual},
+                    'base_original': {'L1': [0.0] * nt_actual, 'L2': [0.0] * nt_actual, 'PSNR': [0.0] * nt_actual, 'SSIM': [0.0] * nt_actual},
+                    'naive': {'L1': [0.0] * nt_actual, 'L2': [0.0] * nt_actual, 'PSNR': [0.0] * nt_actual, 'SSIM': [0.0] * nt_actual},
+                }
+                if finetuned_model is not None:
+                    timestep_metrics_accum['finetuned_disrupt'] = {'L1': [0.0] * nt_actual, 'L2': [0.0] * nt_actual, 'PSNR': [0.0] * nt_actual, 'SSIM': [0.0] * nt_actual}
+            
+            # Compute metrics for each timestep
+            for t in range(nt_actual):
+                gt_t = disrupt_frames[:, t:t+1, ...]  # (B, 1, C, H, W)
+                disrupt_pred_t = disrupt_pred[:, t:t+1, ...]
+                original_pred_t = original_pred[:, t:t+1, ...]
+                naive_pred_t = naive_pred[:, t:t+1, ...]
+                
+                b_t, _, c_t, h_t, w_t = gt_t.shape
+                gt_t_flat = gt_t.reshape(b_t, c_t, h_t, w_t)
+                disrupt_pred_t_flat = disrupt_pred_t.reshape(b_t, c_t, h_t, w_t)
+                original_pred_t_flat = original_pred_t.reshape(b_t, c_t, h_t, w_t)
+                naive_pred_t_flat = naive_pred_t.reshape(b_t, c_t, h_t, w_t)
+                
+                # Base model - Disrupt
+                timestep_metrics_accum['base_disrupt']['L1'][t] += torch.mean(torch.abs(disrupt_pred_t - gt_t)).item()
+                timestep_metrics_accum['base_disrupt']['L2'][t] += torch.mean(torch.pow(disrupt_pred_t - gt_t, 2)).item()
+                timestep_metrics_accum['base_disrupt']['PSNR'][t] += peak_signal_noise_ratio(disrupt_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                timestep_metrics_accum['base_disrupt']['SSIM'][t] += structural_similarity_index_measure(disrupt_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                
+                # Base model - Original
+                timestep_metrics_accum['base_original']['L1'][t] += torch.mean(torch.abs(original_pred_t - gt_t)).item()
+                timestep_metrics_accum['base_original']['L2'][t] += torch.mean(torch.pow(original_pred_t - gt_t, 2)).item()
+                timestep_metrics_accum['base_original']['PSNR'][t] += peak_signal_noise_ratio(original_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                timestep_metrics_accum['base_original']['SSIM'][t] += structural_similarity_index_measure(original_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                
+                # Naive
+                timestep_metrics_accum['naive']['L1'][t] += torch.mean(torch.abs(naive_pred_t - gt_t)).item()
+                timestep_metrics_accum['naive']['L2'][t] += torch.mean(torch.pow(naive_pred_t - gt_t, 2)).item()
+                timestep_metrics_accum['naive']['PSNR'][t] += peak_signal_noise_ratio(naive_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                timestep_metrics_accum['naive']['SSIM'][t] += structural_similarity_index_measure(naive_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                
+                # Finetuned (if available)
+                if finetuned_pred is not None:
+                    finetuned_pred_t = finetuned_pred[:, t:t+1, ...]
+                    finetuned_pred_t_flat = finetuned_pred_t.reshape(b_t, c_t, h_t, w_t)
+                    timestep_metrics_accum['finetuned_disrupt']['L1'][t] += torch.mean(torch.abs(finetuned_pred_t - gt_t)).item()
+                    timestep_metrics_accum['finetuned_disrupt']['L2'][t] += torch.mean(torch.pow(finetuned_pred_t - gt_t, 2)).item()
+                    timestep_metrics_accum['finetuned_disrupt']['PSNR'][t] += peak_signal_noise_ratio(finetuned_pred_t_flat, gt_t_flat, data_range=1.0).item()
+                    timestep_metrics_accum['finetuned_disrupt']['SSIM'][t] += structural_similarity_index_measure(finetuned_pred_t_flat, gt_t_flat, data_range=1.0).item()
+            
             if plot_count < num_samples:
                 for batch_idx in range(min(2, batch_size_actual)):
                     if plot_count >= num_samples:
@@ -343,6 +397,20 @@ def evaluate_disruption(disruption_time, extrap_time, evaluate_time, disruption_
                     plot_count += 1
             
             del initial_states, output_list
+    
+    # Average per-timestep metrics
+    timestep_metrics_avg = {}
+    for model_name, model_metrics in timestep_metrics_accum.items():
+        timestep_metrics_avg[model_name] = {}
+        for metric_name, metric_values in model_metrics.items():
+            timestep_metrics_avg[model_name][metric_name] = [v / total_steps for v in metric_values]
+    
+    # Plot per-timestep metrics
+    plot_timestep_metrics(
+        timestep_metrics_avg, 
+        disruption_time=disruption_time, 
+        save_path=os.path.join(save_dir, 'timestep_metrics.png')
+    )
     
     # Compute average metrics
     metrics = {
@@ -392,6 +460,9 @@ def evaluate_disruption(disruption_time, extrap_time, evaluate_time, disruption_
         print(f"Finetuned Pred L2: {metrics['finetuned_disrupt']['L2']:.4f}")
         print(f"Finetuned Pred PSNR: {metrics['finetuned_disrupt']['PSNR']:.4f}")
         print(f"Finetuned Pred SSIM: {metrics['finetuned_disrupt']['SSIM']:.4f}")
+    
+    # Add per-timestep metrics to the return dict
+    metrics['timestep_metrics'] = timestep_metrics_avg
     
     return metrics
 

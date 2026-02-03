@@ -344,3 +344,71 @@ def plot_hidden_states_list(hidden_states_list, frames, epoch, data_split='train
         plot_layer(hidden_states_list, frames, 'E', output_dir, batch_idx)
         
         plot_input_vs_prediction(hidden_states_list, frames, output_dir, batch_idx)
+
+
+def plot_timestep_metrics(timestep_metrics, disruption_time, save_path='./eval_metrics/timestep_metrics.png'):
+    """
+    Plot per-timestep metrics (L1, L2, PSNR, SSIM) for all models.
+    
+    Args:
+        timestep_metrics: Dictionary with model names as keys, each containing:
+                         {'L1': list, 'L2': list, 'PSNR': list, 'SSIM': list}
+                         where each list has length nt (one value per timestep)
+        disruption_time: Timestep where disruption occurs (for vertical line marker)
+        save_path: Path to save the plot
+    """
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    
+    # Get number of timesteps from first model
+    first_model = list(timestep_metrics.keys())[0]
+    nt = len(timestep_metrics[first_model]['L1'])
+    timesteps = list(range(nt))
+    
+    # Define colors for each model
+    colors = {
+        'base_disrupt': '#1f77b4',      # Blue
+        'base_original': '#ff7f0e',     # Orange
+        'naive': '#2ca02c',             # Green
+        'finetuned_disrupt': '#d62728', # Red
+    }
+    
+    # Define labels for each model
+    labels = {
+        'base_disrupt': 'Base Model - Disrupt',
+        'base_original': 'Base Model - Original',
+        'naive': 'Naive',
+        'finetuned_disrupt': 'Finetuned Model - Disrupt',
+    }
+    
+    # Create 2x2 subplot for L1, L2, PSNR, SSIM
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    metrics_to_plot = ['L1', 'L2', 'PSNR', 'SSIM']
+    
+    for idx, metric_name in enumerate(metrics_to_plot):
+        ax = axes[idx // 2, idx % 2]
+        
+        for model_name, metrics in timestep_metrics.items():
+            color = colors.get(model_name, '#333333')
+            label = labels.get(model_name, model_name)
+            ax.plot(timesteps, metrics[metric_name], marker='o', markersize=4, 
+                   label=label, color=color, linewidth=2)
+        
+        # Add vertical line at disruption time (only add to legend on first subplot)
+        if idx == 0:
+            ax.axvline(x=disruption_time, color='gray', linestyle='--', alpha=0.7, 
+                       label=f'Disruption (t={disruption_time})')
+        else:
+            ax.axvline(x=disruption_time, color='gray', linestyle='--', alpha=0.7)
+        
+        ax.set_xlabel('Timestep', fontsize=11)
+        ax.set_ylabel(metric_name, fontsize=11)
+        ax.set_title(f'{metric_name} per Timestep', fontsize=12)
+        ax.legend(loc='best', fontsize=9)
+        ax.grid(True, alpha=0.3)
+        ax.set_xticks(timesteps)
+    
+    plt.suptitle('Per-Timestep Metrics Comparison', fontsize=14)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Timestep metrics plot saved to {save_path}")
