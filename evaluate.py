@@ -583,7 +583,8 @@ if __name__ == '__main__':
     all_metrics = {}
 
     disruption_time = 8
-    evaluate_time = extrap_time = 11
+    evaluate_time = 9
+    extrap_time = None
     
     print(f"Evaluating sudden appear disruption...")
     all_metrics['appear'] = evaluate_disruption(

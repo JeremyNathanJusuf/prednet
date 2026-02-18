@@ -27,6 +27,7 @@ custom_dataset
 eval_results
 eval_plots*
 eval_metrics*
+size_128x160
 
 # Files
 test*.ipynb

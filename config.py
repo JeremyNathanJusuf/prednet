@@ -49,7 +49,7 @@ num_save = 100
 num_plot = 25
 
 # Model parameters
-n_channels, im_height, im_width = (3, 128, 160)  # RGB images (128x160 for moving MNIST)
+n_channels, im_height, im_width = (3, 128, 160)
 input_shape = (batch_size, n_channels, im_height, im_width)
 # Architecture must match pretrained KITTI weights: 4 layers with (3, 48, 96, 192) channels
 A_stack_sizes = (n_channels, 48, 96, 192)
